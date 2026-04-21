@@ -61,6 +61,7 @@ test("main-js includes remote tts cache metadata in speak payloads", () => {
   assert.ok(mainJsSource.includes("payload.document_id"));
   assert.ok(mainJsSource.includes("payload.document_revision"));
   assert.ok(mainJsSource.includes("payload.cache_scope_version"));
+  assert.ok(mainJsSource.includes("documentRevision: computeTextRevision(text)"));
 });
 
 test("main-js bootstraps analysis only after backend readiness", () => {

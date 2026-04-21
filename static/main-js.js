@@ -4098,14 +4098,14 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     return hash >>> 0;
   }
 
-  function getActiveDocumentCacheMetadata() {
+  function getActiveDocumentCacheMetadata(text = '') {
     const manager = window.documentManager;
     if (!manager || typeof manager.getActiveId !== 'function') return null;
     const documentId = manager.getActiveId();
     if (!documentId) return null;
     return {
       documentId,
-      documentRevision: computeTextRevision(textInput ? textInput.value : ''),
+      documentRevision: computeTextRevision(text),
     };
   }
 
@@ -4401,7 +4401,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     if (selectedRemoteVoice) payload.voice = selectedRemoteVoice;
     if (provider && provider.defaults && provider.defaults.format) payload.format = provider.defaults.format;
     payload.speed = rate;
-    const cacheMetadata = getActiveDocumentCacheMetadata();
+    const cacheMetadata = getActiveDocumentCacheMetadata(payload.text);
     if (cacheMetadata) {
       payload.document_id = cacheMetadata.documentId;
       payload.document_revision = cacheMetadata.documentRevision;
