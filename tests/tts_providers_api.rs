@@ -78,7 +78,9 @@ async fn providers_endpoint_exposes_online_provider_defaults_when_configured() {
             base_url: "https://example.invalid/v1".to_string(),
             api_key: "test-key".to_string(),
             model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string(), "gpt-audio-1.5".to_string()],
             default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string(), "marin".to_string()],
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
@@ -104,8 +106,13 @@ async fn providers_endpoint_exposes_online_provider_defaults_when_configured() {
     assert_eq!(providers.len(), 2);
     assert_eq!(providers[1]["id"], "openai-compatible");
     assert_eq!(providers[1]["status"], "available");
+    assert_eq!(providers[1]["defaults"]["model"], "gpt-4o-mini-tts");
     assert_eq!(providers[1]["defaults"]["voice"], "alloy");
     assert_eq!(providers[1]["defaults"]["format"], "mp3");
+    assert_eq!(providers[1]["options"]["models"][0], "gpt-4o-mini-tts");
+    assert_eq!(providers[1]["options"]["models"][1], "gpt-audio-1.5");
+    assert_eq!(providers[1]["options"]["voices"][0], "alloy");
+    assert_eq!(providers[1]["options"]["voices"][1], "marin");
 }
 
 #[tokio::test]
@@ -116,7 +123,9 @@ async fn from_env_reads_voice_and_format_keys_not_default_voice_and_format() {
         "FUDOKI_TTS_OPENAI_BASE_URL",
         "FUDOKI_TTS_OPENAI_API_KEY",
         "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
         "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
         "FUDOKI_TTS_OPENAI_FORMAT",
         // Legacy keys that must NOT be read.
         "FUDOKI_TTS_OPENAI_DEFAULT_VOICE",
@@ -132,7 +141,9 @@ async fn from_env_reads_voice_and_format_keys_not_default_voice_and_format() {
     env.set("FUDOKI_TTS_OPENAI_BASE_URL", "https://example.invalid/v1");
     env.set("FUDOKI_TTS_OPENAI_API_KEY", "test-key");
     env.set("FUDOKI_TTS_OPENAI_MODEL", "gpt-4o-mini-tts");
+    env.set("FUDOKI_TTS_OPENAI_MODEL_OPTIONS", "gpt-4o-mini-tts, gpt-audio-1.5");
     env.set("FUDOKI_TTS_OPENAI_VOICE", "voice-from-env");
+    env.set("FUDOKI_TTS_OPENAI_VOICE_OPTIONS", "voice-from-env, marin");
     env.set("FUDOKI_TTS_OPENAI_FORMAT", "format-from-env");
 
     // If the implementation mistakenly reads these, the test will fail.
@@ -159,8 +170,13 @@ async fn from_env_reads_voice_and_format_keys_not_default_voice_and_format() {
 
     assert_eq!(providers.len(), 2);
     assert_eq!(providers[1]["id"], "openai-compatible");
+    assert_eq!(providers[1]["defaults"]["model"], "gpt-4o-mini-tts");
     assert_eq!(providers[1]["defaults"]["voice"], "voice-from-env");
     assert_eq!(providers[1]["defaults"]["format"], "format-from-env");
+    assert_eq!(providers[1]["options"]["models"][0], "gpt-4o-mini-tts");
+    assert_eq!(providers[1]["options"]["models"][1], "gpt-audio-1.5");
+    assert_eq!(providers[1]["options"]["voices"][0], "voice-from-env");
+    assert_eq!(providers[1]["options"]["voices"][1], "marin");
 }
 
 #[tokio::test]
@@ -171,7 +187,9 @@ async fn from_env_requires_model_to_enable_online_provider() {
         "FUDOKI_TTS_OPENAI_BASE_URL",
         "FUDOKI_TTS_OPENAI_API_KEY",
         "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
         "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
         "FUDOKI_TTS_OPENAI_FORMAT",
         "FUDOKI_TTS_DEFAULT_PROVIDER",
     ];
@@ -219,7 +237,9 @@ async fn from_env_clamps_invalid_default_provider_when_online_is_configured() {
         "FUDOKI_TTS_OPENAI_BASE_URL",
         "FUDOKI_TTS_OPENAI_API_KEY",
         "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
         "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
         "FUDOKI_TTS_OPENAI_FORMAT",
         "FUDOKI_TTS_DEFAULT_PROVIDER",
     ];
@@ -266,7 +286,9 @@ async fn from_env_requires_nonempty_base_url_api_key_and_model() {
         "FUDOKI_TTS_OPENAI_BASE_URL",
         "FUDOKI_TTS_OPENAI_API_KEY",
         "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
         "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
         "FUDOKI_TTS_OPENAI_FORMAT",
         "FUDOKI_TTS_DEFAULT_PROVIDER",
     ];
@@ -327,7 +349,9 @@ async fn from_env_treats_blank_voice_and_format_as_unset_and_uses_defaults() {
         "FUDOKI_TTS_OPENAI_BASE_URL",
         "FUDOKI_TTS_OPENAI_API_KEY",
         "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
         "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
         "FUDOKI_TTS_OPENAI_FORMAT",
         "FUDOKI_TTS_DEFAULT_PROVIDER",
     ];
@@ -368,6 +392,67 @@ async fn from_env_treats_blank_voice_and_format_as_unset_and_uses_defaults() {
 }
 
 #[tokio::test]
+async fn from_env_uses_trimmed_model_and_voice_option_lists() {
+    let _guard = env_lock().lock().unwrap();
+
+    let keys = [
+        "FUDOKI_TTS_OPENAI_BASE_URL",
+        "FUDOKI_TTS_OPENAI_API_KEY",
+        "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
+        "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
+        "FUDOKI_TTS_OPENAI_FORMAT",
+        "FUDOKI_TTS_DEFAULT_PROVIDER",
+    ];
+
+    let env = EnvGuard::new(&keys);
+    for k in keys {
+        env.remove(k);
+    }
+
+    env.set("FUDOKI_TTS_OPENAI_BASE_URL", "https://example.invalid/v1");
+    env.set("FUDOKI_TTS_OPENAI_API_KEY", "test-key");
+    env.set("FUDOKI_TTS_OPENAI_MODEL", "gpt-4o-mini-tts");
+    env.set(
+        "FUDOKI_TTS_OPENAI_MODEL_OPTIONS",
+        " gpt-4o-mini-tts , , gpt-audio-1.5 , gpt-realtime-1.5 ",
+    );
+    env.set("FUDOKI_TTS_OPENAI_VOICE", "marin");
+    env.set(
+        "FUDOKI_TTS_OPENAI_VOICE_OPTIONS",
+        " marin , cedar ,, alloy ",
+    );
+
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::from_env());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tts/providers")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let provider = &json["providers"][1];
+
+    assert_eq!(provider["defaults"]["model"], "gpt-4o-mini-tts");
+    assert_eq!(provider["defaults"]["voice"], "marin");
+    assert_eq!(provider["options"]["models"][0], "gpt-4o-mini-tts");
+    assert_eq!(provider["options"]["models"][1], "gpt-audio-1.5");
+    assert_eq!(provider["options"]["models"][2], "gpt-realtime-1.5");
+    assert_eq!(provider["options"]["voices"][0], "marin");
+    assert_eq!(provider["options"]["voices"][1], "cedar");
+    assert_eq!(provider["options"]["voices"][2], "alloy");
+}
+
+#[tokio::test]
 #[cfg(debug_assertions)]
 async fn providers_endpoint_fails_closed_when_last_error_mutex_is_poisoned() {
     let tts = TtsConfig::enabled(
@@ -375,7 +460,9 @@ async fn providers_endpoint_fails_closed_when_last_error_mutex_is_poisoned() {
             base_url: "https://example.invalid/v1".to_string(),
             api_key: "test-key".to_string(),
             model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
             default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),

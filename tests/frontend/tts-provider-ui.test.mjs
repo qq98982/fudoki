@@ -16,6 +16,8 @@ const stylesSource = readFileSync(resolve(__dirname, "../../static/styles.css"),
 test("settings markup includes a provider selector and provider status slot", () => {
   assert.ok(mainJsSource.includes("ttsProviderSelect"));
   assert.ok(mainJsSource.includes("ttsProviderStatus"));
+  assert.ok(mainJsSource.includes("remoteTtsModelSelect"));
+  assert.ok(mainJsSource.includes("remoteTtsVoiceSelect"));
 });
 
 test("main-js loads provider metadata from backend helpers", () => {
@@ -26,7 +28,11 @@ test("main-js loads provider metadata from backend helpers", () => {
 
 test("provider state is stored in localStorage and defaults from backend metadata", () => {
   assert.ok(mainJsSource.includes("ttsProvider: 'ttsProvider'"));
+  assert.ok(mainJsSource.includes("ttsRemoteModel: 'ttsRemoteModel'"));
+  assert.ok(mainJsSource.includes("ttsRemoteVoice: 'ttsRemoteVoice'"));
   assert.ok(mainJsSource.includes("default_provider"));
+  assert.ok(mainJsSource.includes("provider.options.models"));
+  assert.ok(mainJsSource.includes("provider.options.voices"));
 });
 
 test("system provider option is always available regardless of backend metadata shape", () => {
@@ -38,6 +44,8 @@ test("i18n includes labels for the new provider UI", () => {
   assert.ok(i18nSource.includes("ttsProviderLabel"));
   assert.ok(i18nSource.includes("ttsProviderSystem"));
   assert.ok(i18nSource.includes("ttsProviderRemote"));
+  assert.ok(i18nSource.includes("remoteTtsModelLabel"));
+  assert.ok(i18nSource.includes("remoteTtsVoiceLabel"));
   assert.ok(i18nSource.includes("ttsStatusAvailable"));
   assert.ok(i18nSource.includes("ttsStatusRequestFailed"));
 });
@@ -52,6 +60,9 @@ test("playback entry points delegate line and full text through the selected pro
   assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(readingParts, 'full')"));
   assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(text, 'full')"));
   assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(textToSpeak, 'token')"));
+  assert.ok(mainJsSource.includes("payload.model"));
+  assert.ok(mainJsSource.includes("payload.voice"));
+  assert.ok(mainJsSource.includes("payload.speed"));
 });
 
 test(".env.example is present and documents the required remote tts keys", () => {
@@ -60,6 +71,8 @@ test(".env.example is present and documents the required remote tts keys", () =>
   assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_BASE_URL"));
   assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_API_KEY"));
   assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_MODEL"));
+  assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_MODEL_OPTIONS"));
+  assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_VOICE_OPTIONS"));
 });
 
 test("gitignore excludes the local .env file", () => {
@@ -70,4 +83,6 @@ test("README explains online tts configuration and env defaults", () => {
   assert.ok(readmeSource.includes("FUDOKI_TTS_OPENAI_BASE_URL"));
   assert.ok(readmeSource.includes("FUDOKI_TTS_DEFAULT_PROVIDER"));
   assert.ok(readmeSource.includes("OpenAI-compatible"));
+  assert.ok(readmeSource.includes("FUDOKI_TTS_OPENAI_MODEL_OPTIONS"));
+  assert.ok(readmeSource.includes("FUDOKI_TTS_OPENAI_VOICE_OPTIONS"));
 });

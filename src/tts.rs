@@ -9,7 +9,9 @@ pub struct OpenAiCompatibleConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    pub model_options: Vec<String>,
     pub default_voice: String,
+    pub voice_options: Vec<String>,
     pub default_format: String,
 }
 
@@ -18,6 +20,8 @@ pub struct SpeakRequest {
     #[serde(default)]
     pub provider: Option<String>,
     pub text: String,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub voice: Option<String>,
     #[serde(default)]
@@ -45,8 +49,15 @@ pub struct SynthesizedSpeech {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TtsProviderDefaults {
+    pub model: String,
     pub voice: String,
     pub format: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TtsProviderOptions {
+    pub models: Vec<String>,
+    pub voices: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -55,6 +66,8 @@ pub struct TtsProviderView {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub defaults: Option<TtsProviderDefaults>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<TtsProviderOptions>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -90,6 +103,34 @@ impl TtsConfig {
             .expect("build reqwest client")
     }
 
+    fn parse_option_list(key: &str) -> Vec<String> {
+        Self::env_trimmed_nonempty(key)
+            .map(|raw| {
+                raw.split(',')
+                    .map(|part| part.trim())
+                    .filter(|part| !part.is_empty())
+                    .map(|part| part.to_string())
+                    .fold(Vec::<String>::new(), |mut acc, item| {
+                        if !acc.contains(&item) {
+                            acc.push(item);
+                        }
+                        acc
+                    })
+            })
+            .unwrap_or_default()
+    }
+
+    fn default_or_first_valid(default_value: String, allowed_values: &mut Vec<String>) -> String {
+        if allowed_values.is_empty() {
+            allowed_values.push(default_value.clone());
+            return default_value;
+        }
+        if allowed_values.contains(&default_value) {
+            return default_value;
+        }
+        allowed_values[0].clone()
+    }
+
     pub fn disabled() -> Self {
         Self {
             client: Self::build_http_client(),
@@ -119,8 +160,12 @@ impl TtsConfig {
 
         match (base_url, api_key, model) {
             (Some(base_url), Some(api_key), Some(model)) => {
+                let mut model_options = Self::parse_option_list("FUDOKI_TTS_OPENAI_MODEL_OPTIONS");
+                let model = Self::default_or_first_valid(model, &mut model_options);
                 let default_voice =
                     Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_VOICE").unwrap_or_else(|| "alloy".to_string());
+                let mut voice_options = Self::parse_option_list("FUDOKI_TTS_OPENAI_VOICE_OPTIONS");
+                let default_voice = Self::default_or_first_valid(default_voice, &mut voice_options);
                 let default_format =
                     Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_FORMAT").unwrap_or_else(|| "mp3".to_string());
                 let default_provider = Self::env_trimmed_nonempty("FUDOKI_TTS_DEFAULT_PROVIDER");
@@ -130,7 +175,9 @@ impl TtsConfig {
                         base_url,
                         api_key,
                         model,
+                        model_options,
                         default_voice,
+                        voice_options,
                         default_format,
                     },
                     default_provider.or_else(|| Some("openai-compatible".to_string())),
@@ -148,6 +195,7 @@ impl TtsConfig {
             id: "system".to_string(),
             status: "available".to_string(),
             defaults: None,
+            options: None,
         });
 
         if let Some(cfg) = &self.openai_compatible {
@@ -168,8 +216,13 @@ impl TtsConfig {
                 id: "openai-compatible".to_string(),
                 status: status.to_string(),
                 defaults: Some(TtsProviderDefaults {
+                    model: cfg.model.clone(),
                     voice: cfg.default_voice.clone(),
                     format: cfg.default_format.clone(),
+                }),
+                options: Some(TtsProviderOptions {
+                    models: cfg.model_options.clone(),
+                    voices: cfg.voice_options.clone(),
                 }),
             });
         }
@@ -239,19 +292,36 @@ impl TtsConfig {
         let base_url = cfg.base_url.trim_end_matches('/');
         let url = format!("{base_url}/audio/speech");
 
+        let model = request.model.as_deref().unwrap_or(cfg.model.as_str());
         let voice = request.voice.as_deref().unwrap_or(cfg.default_voice.as_str());
         let response_format = request
             .format
             .as_deref()
             .unwrap_or(cfg.default_format.as_str());
-        let speed = request.speed.unwrap_or(1.0);
+        let speed = request.speed.unwrap_or(1.0).clamp(0.5, 2.0);
+
+        if !cfg.model_options.iter().any(|allowed| allowed == model) {
+            let err = Self::api_error(
+                "tts_bad_request",
+                format!("Unsupported TTS model: {model}"),
+            );
+            return Err((StatusCode::BAD_REQUEST, err));
+        }
+
+        if !cfg.voice_options.iter().any(|allowed| allowed == voice) {
+            let err = Self::api_error(
+                "tts_bad_request",
+                format!("Unsupported TTS voice: {voice}"),
+            );
+            return Err((StatusCode::BAD_REQUEST, err));
+        }
 
         let resp = self
             .client
             .post(url)
             .bearer_auth(&cfg.api_key)
             .json(&serde_json::json!({
-                "model": cfg.model,
+                "model": model,
                 "input": request.text,
                 "voice": voice,
                 "response_format": response_format,

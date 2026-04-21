@@ -83,6 +83,8 @@ const headerSpeedValue = $('headerSpeedValue');
     rate: 'rate', 
     volume: 'volume',
     ttsProvider: 'ttsProvider',
+    ttsRemoteModel: 'ttsRemoteModel',
+    ttsRemoteVoice: 'ttsRemoteVoice',
     texts: 'texts', 
     activeId: 'activeId',
     activeFolder: 'activeFolder',
@@ -1633,6 +1635,18 @@ const headerSpeedValue = $('headerSpeedValue');
       const s = ttsProviderLabel.querySelector('.label-text');
       if (s) s.textContent = t('ttsProviderLabel');
     }
+    const remoteTtsModelLabel = $('remoteTtsModelLabel');
+    if (remoteTtsModelLabel) {
+      remoteTtsModelLabel.title = t('remoteTtsModelLabel');
+      const s = remoteTtsModelLabel.querySelector('.label-text');
+      if (s) s.textContent = t('remoteTtsModelLabel');
+    }
+    const remoteTtsVoiceLabel = $('remoteTtsVoiceLabel');
+    if (remoteTtsVoiceLabel) {
+      remoteTtsVoiceLabel.title = t('remoteTtsVoiceLabel');
+      const s = remoteTtsVoiceLabel.querySelector('.label-text');
+      if (s) s.textContent = t('remoteTtsVoiceLabel');
+    }
     const speedLabel = $('speedLabel');
     if (speedLabel) {
       speedLabel.title = t('speedLabel');
@@ -1939,6 +1953,8 @@ const headerSpeedValue = $('headerSpeedValue');
     setText('voiceSettingsTitle', 'voiceTitle');
     setText('voiceSelectLabel', 'voiceSelectLabel');
     setText('ttsProviderLabel', 'ttsProviderLabel');
+    setText('remoteTtsModelLabel', 'remoteTtsModelLabel');
+    setText('remoteTtsVoiceLabel', 'remoteTtsVoiceLabel');
     // 保留“选择语音...”占位选项
     const voiceSelect = document.getElementById('voiceSelect');
     if (voiceSelect) {
@@ -1978,6 +1994,8 @@ const headerSpeedValue = $('headerSpeedValue');
     setText('sidebarVoiceSettingsTitle', 'voiceTitle');
     setText('sidebarVoiceSelectLabel', 'voiceSelectLabel');
     setText('sidebarTtsProviderLabel', 'ttsProviderLabel');
+    setText('sidebarRemoteTtsModelLabel', 'remoteTtsModelLabel');
+    setText('sidebarRemoteTtsVoiceLabel', 'remoteTtsVoiceLabel');
     const sidebarVoiceSelect = document.getElementById('sidebarVoiceSelect');
     if (sidebarVoiceSelect) {
       const placeholder2 = sidebarVoiceSelect.querySelector('option[value=""]');
@@ -3945,6 +3963,116 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     return els;
   }
 
+  function getAllRemoteTtsModelSelectEls() {
+    const ids = ['remoteTtsModelSelect', 'sidebarRemoteTtsModelSelect'];
+    const els = [];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) els.push(el);
+    });
+    return els;
+  }
+
+  function getAllRemoteTtsVoiceSelectEls() {
+    const ids = ['remoteTtsVoiceSelect', 'sidebarRemoteTtsVoiceSelect'];
+    const els = [];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) els.push(el);
+    });
+    return els;
+  }
+
+  function getRemoteProviderView() {
+    return ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)
+      ? ttsProvidersMetadata.providers.find((p) => p && p.id === 'openai-compatible')
+      : null;
+  }
+
+  function getAvailableRemoteModels() {
+    const provider = getRemoteProviderView();
+    const values = provider && provider.options && Array.isArray(provider.options.models)
+      ? provider.options.models.filter(Boolean)
+      : [];
+    if (values.length) return values;
+    return provider && provider.defaults && provider.defaults.model ? [provider.defaults.model] : [];
+  }
+
+  function getAvailableRemoteVoices() {
+    const provider = getRemoteProviderView();
+    const values = provider && provider.options && Array.isArray(provider.options.voices)
+      ? provider.options.voices.filter(Boolean)
+      : [];
+    if (values.length) return values;
+    return provider && provider.defaults && provider.defaults.voice ? [provider.defaults.voice] : [];
+  }
+
+  function getDefaultRemoteModelId() {
+    const provider = getRemoteProviderView();
+    const available = getAvailableRemoteModels();
+    const defaultValue = provider && provider.defaults && provider.defaults.model ? provider.defaults.model : '';
+    if (defaultValue && available.includes(defaultValue)) return defaultValue;
+    return available[0] || '';
+  }
+
+  function getDefaultRemoteVoiceId() {
+    const provider = getRemoteProviderView();
+    const available = getAvailableRemoteVoices();
+    const defaultValue = provider && provider.defaults && provider.defaults.voice ? provider.defaults.voice : '';
+    if (defaultValue && available.includes(defaultValue)) return defaultValue;
+    return available[0] || '';
+  }
+
+  function getSelectedRemoteModelId() {
+    const selects = getAllRemoteTtsModelSelectEls();
+    const available = getAvailableRemoteModels();
+    for (const sel of selects) {
+      if (sel && typeof sel.value === 'string' && available.includes(sel.value)) return sel.value;
+    }
+    try {
+      const stored = localStorage.getItem(LS.ttsRemoteModel);
+      if (stored && available.includes(stored)) return stored;
+    } catch (_) {}
+    return getDefaultRemoteModelId();
+  }
+
+  function getSelectedRemoteVoiceId() {
+    const selects = getAllRemoteTtsVoiceSelectEls();
+    const available = getAvailableRemoteVoices();
+    for (const sel of selects) {
+      if (sel && typeof sel.value === 'string' && available.includes(sel.value)) return sel.value;
+    }
+    try {
+      const stored = localStorage.getItem(LS.ttsRemoteVoice);
+      if (stored && available.includes(stored)) return stored;
+    } catch (_) {}
+    return getDefaultRemoteVoiceId();
+  }
+
+  function setSelectedRemoteModelId(modelId, { persist = true } = {}) {
+    const available = getAvailableRemoteModels();
+    const next = available.includes(modelId) ? modelId : getDefaultRemoteModelId();
+    getAllRemoteTtsModelSelectEls().forEach((sel) => {
+      try { sel.value = next; } catch (_) {}
+    });
+    if (persist && next) {
+      try { localStorage.setItem(LS.ttsRemoteModel, next); } catch (_) {}
+    }
+    return next;
+  }
+
+  function setSelectedRemoteVoiceId(voiceId, { persist = true } = {}) {
+    const available = getAvailableRemoteVoices();
+    const next = available.includes(voiceId) ? voiceId : getDefaultRemoteVoiceId();
+    getAllRemoteTtsVoiceSelectEls().forEach((sel) => {
+      try { sel.value = next; } catch (_) {}
+    });
+    if (persist && next) {
+      try { localStorage.setItem(LS.ttsRemoteVoice, next); } catch (_) {}
+    }
+    return next;
+  }
+
   function setTtsProviderStatus({ text, isError } = {}) {
     const els = getAllTtsProviderStatusEls();
     els.forEach((el) => {
@@ -4023,8 +4151,54 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     });
   }
 
+  function renderRemoteTtsOptions() {
+    const modelSelects = getAllRemoteTtsModelSelectEls();
+    const voiceSelects = getAllRemoteTtsVoiceSelectEls();
+    const models = getAvailableRemoteModels();
+    const voices = getAvailableRemoteVoices();
+    const selectedModel = getSelectedRemoteModelId();
+    const selectedVoice = getSelectedRemoteVoiceId();
+
+    modelSelects.forEach((sel) => {
+      sel.innerHTML = '';
+      models.forEach((modelId) => {
+        const opt = document.createElement('option');
+        opt.value = modelId;
+        opt.textContent = modelId;
+        sel.appendChild(opt);
+      });
+      if (models.includes(selectedModel)) sel.value = selectedModel;
+    });
+
+    voiceSelects.forEach((sel) => {
+      sel.innerHTML = '';
+      voices.forEach((voiceId) => {
+        const opt = document.createElement('option');
+        opt.value = voiceId;
+        opt.textContent = voiceId;
+        sel.appendChild(opt);
+      });
+      if (voices.includes(selectedVoice)) sel.value = selectedVoice;
+    });
+  }
+
+  function updateRemoteTtsControlState() {
+    const isRemote = getSelectedTtsProviderId() === 'openai-compatible';
+    getAllRemoteTtsModelSelectEls().forEach((sel) => {
+      sel.disabled = !isRemote;
+      const group = sel.closest('.control-group');
+      if (group) group.style.display = isRemote ? '' : 'none';
+    });
+    getAllRemoteTtsVoiceSelectEls().forEach((sel) => {
+      sel.disabled = !isRemote;
+      const group = sel.closest('.control-group');
+      if (group) group.style.display = isRemote ? '' : 'none';
+    });
+  }
+
   function updateSelectedProviderStatus() {
     const providerId = getSelectedTtsProviderId();
+    updateRemoteTtsControlState();
     if (providerId === SYSTEM_TTS_PROVIDER_ID) {
       setTtsProviderStatus({ text: t('ttsStatusAvailable'), isError: false });
       return;
@@ -4074,6 +4248,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     try {
       ttsProvidersMetadata = await window.FudokiBackendApi.fetchTtsProviders();
       renderTtsProviderOptions();
+      renderRemoteTtsOptions();
 
       const stored = (() => {
         try { return localStorage.getItem(LS.ttsProvider); } catch (_) { return null; }
@@ -4082,12 +4257,15 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
       const defaultProvider = ttsProvidersMetadata && ttsProvidersMetadata.default_provider ? ttsProvidersMetadata.default_provider : SYSTEM_TTS_PROVIDER_ID;
       const initial = stored && known.has(stored) ? stored : (known.has(defaultProvider) ? defaultProvider : SYSTEM_TTS_PROVIDER_ID);
       setSelectedTtsProviderId(initial, { persist: true });
+      setSelectedRemoteModelId(getSelectedRemoteModelId(), { persist: true });
+      setSelectedRemoteVoiceId(getSelectedRemoteVoiceId(), { persist: true });
 
       updateSelectedProviderStatus();
     } catch (e) {
       // Keep System available even if provider discovery fails.
       ttsProvidersMetadata = { default_provider: SYSTEM_TTS_PROVIDER_ID, providers: [{ id: SYSTEM_TTS_PROVIDER_ID, status: 'available' }] };
       renderTtsProviderOptions();
+      renderRemoteTtsOptions();
       setSelectedTtsProviderId(SYSTEM_TTS_PROVIDER_ID, { persist: false });
       setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
     }
@@ -4118,16 +4296,17 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
       return;
     }
 
+    const payload = { provider: providerId, text: String(text || ''), speed: rate };
+    const selectedRemoteModel = getSelectedRemoteModelId();
+    const selectedRemoteVoice = getSelectedRemoteVoiceId();
     const provider =
       ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)
         ? ttsProvidersMetadata.providers.find((p) => p && p.id === providerId)
         : null;
-
-    const payload = { provider: providerId, text: String(text || ''), speed: rate };
-    if (provider && provider.defaults) {
-      if (provider.defaults.voice) payload.voice = provider.defaults.voice;
-      if (provider.defaults.format) payload.format = provider.defaults.format;
-    }
+    if (selectedRemoteModel) payload.model = selectedRemoteModel;
+    if (selectedRemoteVoice) payload.voice = selectedRemoteVoice;
+    if (provider && provider.defaults && provider.defaults.format) payload.format = provider.defaults.format;
+    payload.speed = rate;
 
     try {
       const response = await window.FudokiBackendApi.requestRemoteSpeech(payload);
@@ -6479,6 +6658,20 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
             <div class="tts-provider-status" id="${id('ttsProviderStatus')}" aria-live="polite"></div>
           </div>
 
+          <div class="control-group select-group">
+            <label class="control-label" id="${id('remoteTtsModelLabel')}"><span class="label-text">${t('remoteTtsModelLabel')}</span></label>
+            <select id="${id('remoteTtsModelSelect')}">
+              <option value="">${t('loadingLabel') || 'Loading...'}</option>
+            </select>
+          </div>
+
+          <div class="control-group select-group">
+            <label class="control-label" id="${id('remoteTtsVoiceLabel')}"><span class="label-text">${t('remoteTtsVoiceLabel')}</span></label>
+            <select id="${id('remoteTtsVoiceSelect')}">
+              <option value="">${t('loadingLabel') || 'Loading...'}</option>
+            </select>
+          </div>
+
           <div class="control-group full-width">
             <label class="control-label" id="${id('speedLabel')}"><span class="label-text">${t('speedLabel')}</span></label>
             <input type="range" id="${id('speedRange')}" min="0.5" max="2" step="0.1" value="1">
@@ -6935,6 +7128,8 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
 
   function initTtsProviderControls() {
     const selects = getAllTtsProviderSelectEls();
+    const remoteModelSelects = getAllRemoteTtsModelSelectEls();
+    const remoteVoiceSelects = getAllRemoteTtsVoiceSelectEls();
     if (!selects.length) return;
 
     // Avoid duplicate listeners by re-binding through event delegation semantics.
@@ -6944,11 +7139,30 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
         stopAllPlayback();
         const next = sel.value;
         setSelectedTtsProviderId(next, { persist: true });
+        renderRemoteTtsOptions();
+        updateRemoteTtsControlState();
+      });
+    });
+
+    remoteModelSelects.forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const next = sel.value;
+        setSelectedRemoteModelId(next, { persist: true });
+      });
+    });
+
+    remoteVoiceSelects.forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const next = sel.value;
+        setSelectedRemoteVoiceId(next, { persist: true });
       });
     });
 
     // Sync current selection into any newly injected UI.
     try { setSelectedTtsProviderId(getSelectedTtsProviderId(), { persist: false }); } catch (_) {}
+    try { setSelectedRemoteModelId(getSelectedRemoteModelId(), { persist: false }); } catch (_) {}
+    try { setSelectedRemoteVoiceId(getSelectedRemoteVoiceId(), { persist: false }); } catch (_) {}
+    try { updateRemoteTtsControlState(); } catch (_) {}
   }
 
   // 确保DOM加载完成后初始化所有功能

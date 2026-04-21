@@ -64,10 +64,15 @@ By default, Fudoki can use the browser's built-in Web Speech API ("system" TTS).
 Relevant environment variables (defaults shown in `.env.example`):
 ```env
 FUDOKI_TTS_DEFAULT_PROVIDER=openai-compatible
-FUDOKI_TTS_OPENAI_BASE_URL=https://api.openai.com/v1
+FUDOKI_TTS_OPENAI_BASE_URL=https://one-dev.felo.me/v1
 FUDOKI_TTS_OPENAI_API_KEY=your_api_key_here
 FUDOKI_TTS_OPENAI_MODEL=gpt-4o-mini-tts
+FUDOKI_TTS_OPENAI_MODEL_OPTIONS=gpt-4o-mini-tts,gpt-audio-1.5,gpt-realtime-1.5
+FUDOKI_TTS_OPENAI_VOICE=marin
+FUDOKI_TTS_OPENAI_VOICE_OPTIONS=marin,cedar,alloy
 ```
+
+When `FUDOKI_TTS_OPENAI_MODEL_OPTIONS` or `FUDOKI_TTS_OPENAI_VOICE_OPTIONS` are present, Fudoki uses those lists to populate the remote model and remote voice dropdowns in Settings. The `.env` values `FUDOKI_TTS_OPENAI_MODEL` and `FUDOKI_TTS_OPENAI_VOICE` are used as defaults; if a saved browser selection is no longer in the allowed list, Fudoki falls back to the `.env` default and then to the first valid option.
 
 ### Backend APIs
 - `GET /api/health`

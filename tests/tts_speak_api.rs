@@ -1,11 +1,13 @@
 use axum::{
     body::Body,
     http::{header, Method, Request, StatusCode},
+    extract::Json as AxumJson,
     response::IntoResponse,
     routing::post,
     Json, Router,
 };
 use http_body_util::BodyExt;
+use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
 use fudoki_backend::tts::{OpenAiCompatibleConfig, TtsConfig};
@@ -36,7 +38,9 @@ async fn speak_endpoint_returns_audio_bytes_from_upstream() {
             base_url: upstream_url,
             api_key: "test-key".to_string(),
             model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string(), "gpt-audio-1.5".to_string()],
             default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string(), "marin".to_string()],
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
@@ -88,7 +92,9 @@ async fn speak_endpoint_returns_explicit_json_error_when_upstream_rejects_creden
             base_url: upstream_url,
             api_key: "bad-key".to_string(),
             model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
             default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
@@ -121,7 +127,9 @@ async fn speak_endpoint_does_not_mark_provider_unavailable_after_bad_request() {
             base_url: "https://example.invalid/v1".to_string(),
             api_key: "test-key".to_string(),
             model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
             default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
@@ -159,4 +167,127 @@ async fn speak_endpoint_does_not_mark_provider_unavailable_after_bad_request() {
     assert_eq!(providers.len(), 2);
     assert_eq!(providers[1]["id"], "openai-compatible");
     assert_eq!(providers[1]["status"], "available");
+}
+
+#[tokio::test]
+async fn speak_endpoint_forwards_selected_model_and_voice_to_upstream() {
+    let captured = Arc::new(Mutex::new(None::<serde_json::Value>));
+    let captured_clone = captured.clone();
+    let upstream_url = spawn_fake_upstream(
+        Router::new().route(
+            "/v1/audio/speech",
+            post(move |AxumJson(payload): AxumJson<serde_json::Value>| {
+                let captured_clone = captured_clone.clone();
+                async move {
+                    *captured_clone.lock().unwrap() = Some(payload);
+                    ([(header::CONTENT_TYPE, "audio/mpeg")], vec![9_u8, 8_u8]).into_response()
+                }
+            }),
+        ),
+    )
+    .await;
+
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: upstream_url,
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string(), "gpt-audio-1.5".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string(), "marin".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"provider":"openai-compatible","text":"こんにちは","model":"gpt-audio-1.5","voice":"marin","format":"mp3","speed":1.2}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = captured.lock().unwrap().clone().unwrap();
+    assert_eq!(payload["model"], "gpt-audio-1.5");
+    assert_eq!(payload["voice"], "marin");
+    let speed = payload["speed"].as_f64().unwrap();
+    assert!((speed - 1.2).abs() < 0.001, "unexpected speed: {speed}");
+}
+
+#[tokio::test]
+async fn speak_endpoint_rejects_remote_model_not_in_allowed_options() {
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: "https://example.invalid/v1".to_string(),
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string(), "marin".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"provider":"openai-compatible","text":"こんにちは","model":"gpt-audio-1.5"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["code"], "tts_bad_request");
+}
+
+#[tokio::test]
+async fn speak_endpoint_rejects_remote_voice_not_in_allowed_options() {
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: "https://example.invalid/v1".to_string(),
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"provider":"openai-compatible","text":"こんにちは","voice":"marin"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["code"], "tts_bad_request");
 }

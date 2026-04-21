@@ -92,7 +92,9 @@ The backend will load `.env` at startup. The first version will use these variab
 FUDOKI_TTS_OPENAI_BASE_URL=https://api.openai.com/v1
 FUDOKI_TTS_OPENAI_API_KEY=your_api_key_here
 FUDOKI_TTS_OPENAI_MODEL=gpt-4o-mini-tts
+FUDOKI_TTS_OPENAI_MODEL_OPTIONS=gpt-4o-mini-tts,gpt-audio-1.5,gpt-realtime-1.5
 FUDOKI_TTS_OPENAI_VOICE=alloy
+FUDOKI_TTS_OPENAI_VOICE_OPTIONS=marin,cedar,alloy
 FUDOKI_TTS_OPENAI_FORMAT=mp3
 FUDOKI_TTS_DEFAULT_PROVIDER=openai-compatible
 ```
@@ -114,9 +116,36 @@ If any required value is missing:
 
 These values define backend defaults when present:
 
+- `FUDOKI_TTS_OPENAI_MODEL_OPTIONS`
 - `FUDOKI_TTS_OPENAI_VOICE`
+- `FUDOKI_TTS_OPENAI_VOICE_OPTIONS`
 - `FUDOKI_TTS_OPENAI_FORMAT`
 - `FUDOKI_TTS_DEFAULT_PROVIDER`
+
+### Selectable Remote Options
+
+The frontend will expose selectable remote model and voice controls for the `openai-compatible` provider.
+
+Rules:
+
+- if `.env` defines `FUDOKI_TTS_OPENAI_MODEL_OPTIONS`, the remote model dropdown must use exactly that list
+- if `.env` does not define `FUDOKI_TTS_OPENAI_MODEL_OPTIONS`, the backend may expose a small built-in fallback list suitable for the configured gateway
+- if `.env` defines `FUDOKI_TTS_OPENAI_VOICE_OPTIONS`, the remote voice dropdown must use exactly that list
+- if `.env` does not define `FUDOKI_TTS_OPENAI_VOICE_OPTIONS`, the backend may expose a small built-in fallback list
+- `.env` default model and voice values act as initial defaults, not as hard locks
+- user-local saved model and voice selections override `.env` defaults only when the saved values are still in the backend-provided option lists
+- if a saved value is no longer valid, the app must fall back to `.env` default and then to the first valid option
+
+### Remote Speed
+
+Remote speed will be configurable in the UI, but it will reuse the existing single playback speed control instead of creating a second speed system.
+
+Rules:
+
+- when the selected provider is `system`, the existing speed control continues to drive browser TTS rate
+- when the selected provider is `openai-compatible`, the same speed control drives the remote `speed` request field
+- remote speed is not sourced from `.env`; it follows the existing persisted playback rate setting
+- the backend should validate or clamp remote speed to the same safe range already used by the UI, currently `0.5` to `2.0`
 
 ### Default Precedence
 
@@ -191,8 +220,13 @@ Response shape:
       "label": "OpenAI-compatible",
       "status": "available",
       "defaults": {
+        "model": "gpt-4o-mini-tts",
         "voice": "alloy",
         "format": "mp3"
+      },
+      "options": {
+        "models": ["gpt-4o-mini-tts", "gpt-audio-1.5", "gpt-realtime-1.5"],
+        "voices": ["marin", "cedar", "alloy"]
       }
     }
   ],
@@ -223,6 +257,7 @@ Request shape:
 {
   "provider": "openai-compatible",
   "text": "日本語の文章",
+  "model": "gpt-4o-mini-tts",
   "voice": "alloy",
   "format": "mp3",
   "speed": 1.0
@@ -265,15 +300,20 @@ Behavior:
 - `System` is always shown
 - `OpenAI-compatible` is shown only when backend configuration is complete
 - if online provider exists and has a known error state, settings display that state clearly
+- when `openai-compatible` is selected, the UI exposes remote model and remote voice selectors sourced from backend metadata
+- when `system` is selected, remote model and remote voice selectors are hidden or disabled
+- the existing speed control is shared by both providers and changes meaning based on the currently selected provider
 
 The first version should prefer a simple UI:
 
 - provider selector
 - provider status text for online mode
 - existing system voice selector remains relevant only for `System`
-- online `voice` may be user-editable in a later step if implementation cost stays reasonable
+- remote model selector for `openai-compatible`
+- remote voice selector for `openai-compatible`
+- one shared speed control reused across both providers
 
-If scope pressure appears during implementation, the first version may keep remote `model` fixed to `.env` and only expose remote `voice` later. The primary requirement is compatibility and reliable playback, not a large settings surface.
+This is now an explicit requirement rather than a later enhancement.
 
 ### Playback Scope
 
@@ -289,6 +329,8 @@ Online provider:
 - token playback remains on system TTS in the first version
 
 If the current provider is `openai-compatible` and the user triggers token playback, the implementation should use the existing system path explicitly rather than silently sending a remote request.
+
+When the current provider is `openai-compatible`, line and full-text playback requests must include the currently selected remote model, remote voice, and shared speed value.
 
 ## Runtime Playback Model
 
@@ -315,6 +357,8 @@ Rules:
 - starting remote playback cancels system speech first
 - starting system playback stops remote audio first
 - switching remote settings while remote audio is playing stops current playback and restarts the target text from the beginning of that line or full-text request
+- if a user-local saved remote model or voice is no longer present in the backend-provided option list, the frontend must discard that saved value and fall back to `.env` default, then to the first valid option
+- the backend must reject remote `model` or `voice` values that are not in the currently allowed option lists, returning a clear request error rather than silently rewriting the value
 
 The first version does not need exact per-character continuation for remote audio.
 
