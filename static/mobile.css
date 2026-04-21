@@ -519,6 +519,11 @@
   gap: 6px;
 }
 
+#headerRemoteTtsState {
+  min-width: 60px;
+  font-size: 11px;
+}
+
 #headerSpeedRange {
   width: 100px;
 }

@@ -4731,6 +4731,12 @@ input[type="text"], textarea { font-size: 14px; }
   width: 0%;
   background: var(--primary);
 }
+.header-remote-tts-state {
+  min-width: 72px;
+  font-size: 12px;
+  color: var(--text-secondary-color, var(--muted));
+  white-space: nowrap;
+}
 .play-control-bar .play-volume {
   width: 80px;
   height: 20px;

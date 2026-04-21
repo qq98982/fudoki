@@ -4082,6 +4082,12 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     });
   }
 
+  function setHeaderRemoteTtsState(text = '') {
+    const el = document.getElementById('headerRemoteTtsState');
+    if (!el) return;
+    el.textContent = String(text || '');
+  }
+
   function getKnownProviderIds() {
     const ids = [SYSTEM_TTS_PROVIDER_ID];
     if (ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)) {
@@ -4155,6 +4161,26 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   function renderRemoteTtsOptions() {
     const modelSelects = getAllRemoteTtsModelSelectEls();
     const voiceSelects = getAllRemoteTtsVoiceSelectEls();
+    if (!ttsProvidersMetadata) {
+      const placeholder = t('loadingLabel') || 'Loading...';
+      modelSelects.forEach((sel) => {
+        sel.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = placeholder;
+        sel.appendChild(opt);
+        sel.value = '';
+      });
+      voiceSelects.forEach((sel) => {
+        sel.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = placeholder;
+        sel.appendChild(opt);
+        sel.value = '';
+      });
+      return;
+    }
     const models = getAvailableRemoteModels();
     const voices = getAvailableRemoteVoices();
     const selectedModel = getSelectedRemoteModelId();
@@ -4228,6 +4254,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     updateRemoteTtsControlState();
     if (providerId === SYSTEM_TTS_PROVIDER_ID) {
       setTtsProviderStatus({ text: t('ttsStatusAvailable'), isError: false });
+      setHeaderRemoteTtsState('');
       return;
     }
     const provider =
@@ -4238,19 +4265,24 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     if (providerId !== SYSTEM_TTS_PROVIDER_ID && providerId && (remoteTtsPlayerState === 'loading' || remoteTtsPlayerState === 'playing')) {
       // Keep this compact and language-agnostic to avoid a string explosion.
       setTtsProviderStatus({ text: remoteTtsPlayerState === 'loading' ? 'Loading...' : t('ttsStatusAvailable'), isError: false });
+      setHeaderRemoteTtsState(remoteTtsPlayerState === 'loading' ? 'Loading...' : t('ttsStatusAvailable'));
       return;
     }
 
     if (!provider) {
       setTtsProviderStatus({ text: '', isError: false });
+      setHeaderRemoteTtsState('');
       return;
     }
     if (provider.status === 'available') {
       setTtsProviderStatus({ text: t('ttsStatusAvailable'), isError: false });
+      setHeaderRemoteTtsState('');
     } else if (provider.status === 'unavailable') {
       setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
+      setHeaderRemoteTtsState(t('ttsStatusRequestFailed'));
     } else {
       setTtsProviderStatus({ text: String(provider.status || ''), isError: false });
+      setHeaderRemoteTtsState(String(provider.status || ''));
     }
   }
 
@@ -4275,7 +4307,6 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     try {
       ttsProvidersMetadata = await window.FudokiBackendApi.fetchTtsProviders();
       renderTtsProviderOptions();
-      renderRemoteTtsOptions();
 
       const stored = (() => {
         try { return localStorage.getItem(LS.ttsProvider); } catch (_) { return null; }
@@ -4284,6 +4315,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
       const defaultProvider = ttsProvidersMetadata && ttsProvidersMetadata.default_provider ? ttsProvidersMetadata.default_provider : SYSTEM_TTS_PROVIDER_ID;
       const initial = stored && known.has(stored) ? stored : (known.has(defaultProvider) ? defaultProvider : SYSTEM_TTS_PROVIDER_ID);
       setSelectedTtsProviderId(initial, { persist: true });
+      renderRemoteTtsOptions();
       setSelectedRemoteModelId(getSelectedRemoteModelId(), { persist: true });
       setSelectedRemoteVoiceId(getSelectedRemoteVoiceId(), { persist: true });
 
@@ -4429,10 +4461,11 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
 
 
   function updatePlayButtonStates() {
+    const anyPlaying = isPlaying || isRemotePlaybackActive();
     // 更新播放全文按钮
-    updateButtonIcon(playAllBtn, isPlaying);
+    updateButtonIcon(playAllBtn, anyPlaying);
     // 更新导航播放按钮
-    updateButtonIcon(headerPlayToggle, isPlaying);
+    updateButtonIcon(headerPlayToggle, anyPlaying);
     // 更新暂停/恢复按钮
     updatePauseButtonIcon(headerPauseToggle, isPlaying, isPaused);
     
@@ -5516,8 +5549,8 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   if (playAllBtn) playAllBtn.addEventListener('click', playAllText);
   if (headerPlayToggle) {
     headerPlayToggle.addEventListener('click', (e) => {
-      if (isPlaying) {
-        stopSpeaking();
+      if (isPlaying || isRemotePlaybackActive()) {
+        stopAllPlayback();
       } else {
         playAllText();
       }

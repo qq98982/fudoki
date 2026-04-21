@@ -20,6 +20,7 @@ test("settings markup includes a provider selector and provider status slot", ()
   assert.ok(mainJsSource.includes("remoteTtsVoiceSelect"));
   assert.ok(mainJsSource.includes("headerRemoteTtsModelSelect"));
   assert.ok(mainJsSource.includes("headerRemoteTtsVoiceSelect"));
+  assert.ok(mainJsSource.includes("headerRemoteTtsState"));
 });
 
 test("main-js loads provider metadata from backend helpers", () => {
@@ -70,6 +71,8 @@ test("playback entry points delegate line and full text through the selected pro
   assert.ok(mainJsSource.includes("payload.model"));
   assert.ok(mainJsSource.includes("payload.voice"));
   assert.ok(mainJsSource.includes("payload.speed"));
+  assert.ok(mainJsSource.includes("isPlaying || isRemotePlaybackActive()"));
+  assert.ok(mainJsSource.includes("setHeaderRemoteTtsState"));
 });
 
 test(".env.example is present and documents the required remote tts keys", () => {
