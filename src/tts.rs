@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::sync::{Arc, Mutex};
 
 use axum::http::{header, StatusCode};
@@ -64,6 +65,7 @@ pub struct TtsProvidersResponse {
 
 #[derive(Clone)]
 pub struct TtsConfig {
+    client: reqwest::Client,
     openai_compatible: Option<OpenAiCompatibleConfig>,
     default_provider: String,
     last_error: Arc<Mutex<Option<String>>>,
@@ -80,8 +82,17 @@ impl TtsConfig {
         }
     }
 
+    fn build_http_client() -> reqwest::Client {
+        // Keep this concrete to avoid hanging requests when upstream misbehaves.
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(20))
+            .build()
+            .expect("build reqwest client")
+    }
+
     pub fn disabled() -> Self {
         Self {
+            client: Self::build_http_client(),
             openai_compatible: None,
             default_provider: "system".to_string(),
             last_error: Arc::new(Mutex::new(None)),
@@ -94,6 +105,7 @@ impl TtsConfig {
     ) -> Self {
         let openai_id = "openai-compatible".to_string();
         Self {
+            client: Self::build_http_client(),
             openai_compatible: Some(openai_compatible),
             default_provider: default_provider.unwrap_or(openai_id),
             last_error: Arc::new(Mutex::new(None)),
@@ -111,7 +123,7 @@ impl TtsConfig {
                     Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_VOICE").unwrap_or_else(|| "alloy".to_string());
                 let default_format =
                     Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_FORMAT").unwrap_or_else(|| "mp3".to_string());
-                let default_provider = std::env::var("FUDOKI_TTS_DEFAULT_PROVIDER").ok();
+                let default_provider = Self::env_trimmed_nonempty("FUDOKI_TTS_DEFAULT_PROVIDER");
 
                 Self::enabled(
                     OpenAiCompatibleConfig {
@@ -210,7 +222,6 @@ impl TtsConfig {
                 "tts_bad_request",
                 format!("Unsupported TTS provider: {provider}"),
             );
-            self.set_last_error(err.error.message.clone());
             return Err((StatusCode::BAD_REQUEST, err));
         }
 
@@ -221,7 +232,6 @@ impl TtsConfig {
                     "tts_bad_request",
                     "TTS provider not configured: openai-compatible",
                 );
-                self.set_last_error(err.error.message.clone());
                 return Err((StatusCode::BAD_REQUEST, err));
             }
         };
@@ -236,8 +246,8 @@ impl TtsConfig {
             .unwrap_or(cfg.default_format.as_str());
         let speed = request.speed.unwrap_or(1.0);
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .client
             .post(url)
             .bearer_auth(&cfg.api_key)
             .json(&serde_json::json!({
@@ -249,7 +259,8 @@ impl TtsConfig {
             }))
             .send()
             .await
-            .map_err(|_e| {
+            .map_err(|e| {
+                eprintln!("tts: upstream request failed: {e}");
                 let message = "TTS request failed: upstream request error".to_string();
                 let err = Self::api_error("tts_request_failed", message.clone());
                 self.set_last_error(message);
@@ -259,6 +270,7 @@ impl TtsConfig {
         let status = resp.status();
         if !status.is_success() {
             let message = format!("TTS request failed: {status}");
+            eprintln!("tts: upstream returned non-success: {message}");
             let err = Self::api_error("tts_request_failed", message.clone());
             self.set_last_error(message);
             return Err((StatusCode::BAD_GATEWAY, err));
@@ -271,7 +283,8 @@ impl TtsConfig {
             .unwrap_or("audio/mpeg")
             .to_string();
 
-        let bytes = resp.bytes().await.map_err(|_e| {
+        let bytes = resp.bytes().await.map_err(|e| {
+            eprintln!("tts: failed reading upstream audio bytes: {e}");
             let message = "TTS request failed: upstream response error".to_string();
             let err = Self::api_error("tts_request_failed", message.clone());
             self.set_last_error(message);

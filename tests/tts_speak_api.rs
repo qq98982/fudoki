@@ -115,7 +115,7 @@ async fn speak_endpoint_returns_explicit_json_error_when_upstream_rejects_creden
 }
 
 #[tokio::test]
-async fn speak_endpoint_marks_provider_unavailable_after_bad_request_failure() {
+async fn speak_endpoint_does_not_mark_provider_unavailable_after_bad_request() {
     let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: "https://example.invalid/v1".to_string(),
@@ -158,5 +158,5 @@ async fn speak_endpoint_marks_provider_unavailable_after_bad_request_failure() {
     let providers = json["providers"].as_array().unwrap();
     assert_eq!(providers.len(), 2);
     assert_eq!(providers[1]["id"], "openai-compatible");
-    assert_eq!(providers[1]["status"], "unavailable");
+    assert_eq!(providers[1]["status"], "available");
 }
