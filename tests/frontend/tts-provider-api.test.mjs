@@ -31,14 +31,7 @@ test("requestRemoteSpeech posts provider payload and returns the response", asyn
   let request = null;
   const response = {
     ok: true,
-    headers: {
-      get: (key) => {
-        const normalized = String(key || "").toLowerCase();
-        if (normalized === "content-type") return "audio/mpeg";
-        if (normalized === "x-fudoki-tts-cache") return "hit";
-        return null;
-      },
-    },
+    headers: { get: (key) => (key === "content-type" ? "audio/mpeg" : null) },
     arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
   };
   const fetcher = async (url, init) => {
@@ -52,7 +45,6 @@ test("requestRemoteSpeech posts provider payload and returns the response", asyn
   );
 
   assert.equal(result, response);
-  assert.equal(result.headers.get("x-fudoki-tts-cache"), "hit");
   assert.equal(request.url, "/api/tts/speak");
   assert.equal(request.init.method, "POST");
   assert.equal(request.init.headers["Content-Type"], "application/json");
@@ -84,3 +76,4 @@ test("requestRemoteSpeech surfaces backend error messages", async () => {
     /TTS request failed: 401 Unauthorized/,
   );
 });
+

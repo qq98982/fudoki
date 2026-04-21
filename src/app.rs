@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Query, State},
-    http::{header, HeaderName, StatusCode},
+    http::{header, StatusCode},
     response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
@@ -79,17 +79,7 @@ async fn tts_speak(
     Json(payload): Json<SpeakRequest>,
 ) -> impl IntoResponse {
     match state.tts.synthesize(&payload).await {
-        Ok(speech) => {
-            let cache_header = HeaderName::from_static("x-fudoki-tts-cache");
-            (
-                [
-                    (header::CONTENT_TYPE, speech.content_type),
-                    (cache_header, speech.cache_status.to_string()),
-                ],
-                speech.bytes,
-            )
-                .into_response()
-        }
+        Ok(speech) => ([(header::CONTENT_TYPE, speech.content_type)], speech.bytes).into_response(),
         Err((status, err)) => (status, Json(err)).into_response(),
     }
 }

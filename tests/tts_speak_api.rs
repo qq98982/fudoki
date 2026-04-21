@@ -339,13 +339,6 @@ async fn speak_endpoint_reuses_cached_audio_for_same_document_revision() {
         .await
         .unwrap();
     assert_eq!(first.status(), StatusCode::OK);
-    assert_eq!(
-        first
-            .headers()
-            .get("x-fudoki-tts-cache")
-            .and_then(|value| value.to_str().ok()),
-        Some("miss")
-    );
 
     let second = app
         .oneshot(
@@ -359,13 +352,6 @@ async fn speak_endpoint_reuses_cached_audio_for_same_document_revision() {
         .await
         .unwrap();
     assert_eq!(second.status(), StatusCode::OK);
-    assert_eq!(
-        second
-            .headers()
-            .get("x-fudoki-tts-cache")
-            .and_then(|value| value.to_str().ok()),
-        Some("hit")
-    );
     assert_eq!(request_count.load(Ordering::SeqCst), 1);
 }
 

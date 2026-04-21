@@ -4410,12 +4410,6 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
 
     try {
       const response = await window.FudokiBackendApi.requestRemoteSpeech(payload);
-      const cacheStatus = response.headers.get('x-fudoki-tts-cache') || '';
-      if (cacheStatus === 'hit') {
-        showInfoToast(t('ttsCacheHit'), 1600);
-      } else if (cacheStatus === 'miss') {
-        showInfoToast(t('ttsCacheMiss'), 1600);
-      }
       await player.playResponse(response);
       // Refresh provider status after a successful request.
       try { await bootstrapTtsProviders(); } catch (_) {}
