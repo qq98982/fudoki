@@ -1,5 +1,12 @@
-use axum::{routing::get, Json, Router};
+use std::path::PathBuf;
+
+use axum::{
+    response::{Html, IntoResponse},
+    routing::get,
+    Json, Router,
+};
 use serde::Serialize;
+use tower_http::services::ServeDir;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -16,6 +23,13 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+async fn index() -> impl IntoResponse {
+    Html(std::fs::read_to_string("index.html").expect("read index.html"))
+}
+
 pub fn build_router() -> Router {
-    Router::new().route("/api/health", get(health))
+    Router::new()
+        .route("/", get(index))
+        .route("/api/health", get(health))
+        .nest_service("/static", ServeDir::new(PathBuf::from("static")))
 }

@@ -4,9 +4,10 @@
   "description": "纯JS版本的日语学习工具，支持分词和语音朗读",
   "main": "index.html",
   "scripts": {
-    "start": "python3 -m http.server 8000",
-    "dev": "python3 -m http.server 8000",
-    "serve": "python3 -m http.server 8000"
+    "start": "cargo run --release",
+    "dev": "cargo run",
+    "serve": "cargo run --release",
+    "test": "cargo test && node --test tests/frontend/*.test.mjs"
   },
   "dependencies": {
     "jmdict-simplified-node": "^1.1.2",
