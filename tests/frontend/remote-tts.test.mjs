@@ -66,3 +66,74 @@ test("remote player stop revokes object urls and returns to idle", async () => {
   assert.equal(player.getState(), "idle");
 });
 
+test("remote player ignores late onended from prior playback (does not stop newest)", async () => {
+  const revoked = [];
+  const log = [];
+  const audios = [];
+  let urlCounter = 0;
+  const player = createRemoteTtsPlayer({
+    audioFactory: () => {
+      const audio = createFakeAudio(log);
+      audios.push(audio);
+      return audio;
+    },
+    urlApi: {
+      createObjectURL: () => `blob:test-${(urlCounter += 1)}`,
+      revokeObjectURL: (value) => revoked.push(value),
+    },
+    onStateChange: () => {},
+  });
+
+  await player.playResponse({
+    headers: { get: () => "audio/mpeg" },
+    arrayBuffer: async () => new Uint8Array([1]).buffer,
+  });
+
+  const lateOnEnded = audios[0].onended;
+
+  await player.playResponse({
+    headers: { get: () => "audio/mpeg" },
+    arrayBuffer: async () => new Uint8Array([2]).buffer,
+  });
+
+  // Simulate a late event from the first audio instance after a new playback started.
+  lateOnEnded?.();
+
+  assert.deepEqual(revoked, ["blob:test-1"]);
+  assert.equal(player.getState(), "playing");
+});
+
+test("remote player ignores stale async playResponse work when a newer call starts", async () => {
+  const revoked = [];
+  const log = [];
+  let resolveFirst = null;
+  const firstBufferPromise = new Promise((resolve) => {
+    resolveFirst = resolve;
+  });
+
+  const player = createRemoteTtsPlayer({
+    audioFactory: () => createFakeAudio(log),
+    urlApi: {
+      createObjectURL: () => "blob:test-latest",
+      revokeObjectURL: (value) => revoked.push(value),
+    },
+    onStateChange: () => {},
+  });
+
+  const firstPlay = player.playResponse({
+    headers: { get: () => "audio/mpeg" },
+    arrayBuffer: async () => firstBufferPromise,
+  });
+
+  await player.playResponse({
+    headers: { get: () => "audio/mpeg" },
+    arrayBuffer: async () => new Uint8Array([9]).buffer,
+  });
+
+  resolveFirst(new Uint8Array([8]).buffer);
+  await firstPlay;
+
+  assert.deepEqual(log, [["play", "blob:test-latest"]]);
+  assert.deepEqual(revoked, []);
+  assert.equal(player.getState(), "playing");
+});

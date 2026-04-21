@@ -29,6 +29,7 @@ export function createRemoteTtsPlayer({
   onStateChange = () => {},
 } = {}) {
   let state = STATES.idle;
+  let generation = 0;
   let audio = null;
   let objectUrl = null;
 
@@ -41,44 +42,51 @@ export function createRemoteTtsPlayer({
     }
   }
 
-  function revokeObjectUrl() {
-    if (!objectUrl) return;
+  function revokeObjectUrl(url) {
+    if (!url) return;
     try {
-      urlApi.revokeObjectURL(objectUrl);
+      urlApi.revokeObjectURL(url);
     } catch (_error) {
       // Ignore revoke errors; object URL lifecycle should be best-effort.
-    } finally {
-      objectUrl = null;
     }
   }
 
-  function cleanupAudio() {
-    if (!audio) return;
+  function cleanupAudio(audioToCleanup) {
+    if (!audioToCleanup) return;
 
     try {
-      audio.pause?.();
+      audioToCleanup.pause?.();
     } catch (_error) {}
 
     try {
-      audio.src = "";
+      audioToCleanup.src = "";
     } catch (_error) {}
 
     try {
-      audio.currentTime = 0;
+      audioToCleanup.currentTime = 0;
     } catch (_error) {}
 
-    audio.onended = null;
-    audio.onerror = null;
-    audio = null;
+    audioToCleanup.onended = null;
+    audioToCleanup.onerror = null;
   }
 
   function stopInternal({ emitIdle } = { emitIdle: true }) {
-    cleanupAudio();
-    revokeObjectUrl();
-    if (emitIdle) emit(STATES.idle);
+    const audioToStop = audio;
+    const urlToRevoke = objectUrl;
+
+    audio = null;
+    objectUrl = null;
+
+    cleanupAudio(audioToStop);
+    revokeObjectUrl(urlToRevoke);
+    if (emitIdle) {
+      emit(STATES.idle);
+    }
   }
 
   async function playResponse(response) {
+    const playGeneration = (generation += 1);
+
     // Stop any current playback without emitting an intermediate "idle" state.
     stopInternal({ emitIdle: false });
 
@@ -88,9 +96,11 @@ export function createRemoteTtsPlayer({
     try {
       buffer = await response.arrayBuffer();
     } catch (_error) {
-      emit(STATES.error);
+      if (playGeneration === generation) emit(STATES.error);
       return;
     }
+
+    if (playGeneration !== generation) return;
 
     const contentType =
       response && response.headers && typeof response.headers.get === "function"
@@ -101,40 +111,60 @@ export function createRemoteTtsPlayer({
     try {
       blob = blobFactory([buffer], { type: contentType || "" });
     } catch (_error) {
-      emit(STATES.error);
+      if (playGeneration === generation) emit(STATES.error);
       return;
     }
 
+    if (playGeneration !== generation) return;
+
+    let nextUrl = null;
     try {
-      objectUrl = urlApi.createObjectURL(blob);
+      nextUrl = urlApi.createObjectURL(blob);
     } catch (_error) {
-      emit(STATES.error);
+      if (playGeneration === generation) emit(STATES.error);
       return;
     }
 
-    audio = audioFactory();
-    audio.onended = () => {
+    if (playGeneration !== generation) {
+      revokeObjectUrl(nextUrl);
+      return;
+    }
+
+    const nextAudio = audioFactory();
+    const handlerGeneration = playGeneration;
+    nextAudio.onended = () => {
+      if (handlerGeneration !== generation) return;
       stopInternal({ emitIdle: true });
     };
-    audio.onerror = () => {
-      cleanupAudio();
-      revokeObjectUrl();
+    nextAudio.onerror = () => {
+      if (handlerGeneration !== generation) return;
+      stopInternal({ emitIdle: false });
       emit(STATES.error);
     };
 
-    audio.src = objectUrl;
+    nextAudio.src = nextUrl;
+
+    // Publish "current" only after we have a fully wired audio element + URL, guarded by generation.
+    audio = nextAudio;
+    objectUrl = nextUrl;
 
     try {
-      await audio.play();
-      emit(STATES.playing);
+      await nextAudio.play();
+      if (playGeneration === generation) emit(STATES.playing);
     } catch (_error) {
-      cleanupAudio();
-      revokeObjectUrl();
+      if (playGeneration !== generation) {
+        cleanupAudio(nextAudio);
+        revokeObjectUrl(nextUrl);
+        return;
+      }
+
+      stopInternal({ emitIdle: false });
       emit(STATES.error);
     }
   }
 
   function stop() {
+    generation += 1;
     stopInternal({ emitIdle: true });
   }
 
@@ -154,4 +184,3 @@ if (typeof window !== "undefined") {
     createRemoteTtsPlayer,
   };
 }
-
