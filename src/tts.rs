@@ -76,10 +76,10 @@ impl TtsConfig {
 
         match (base_url, api_key, model) {
             (Some(base_url), Some(api_key), Some(model)) => {
-                let default_voice = std::env::var("FUDOKI_TTS_OPENAI_VOICE")
-                    .unwrap_or_else(|_| "alloy".to_string());
+                let default_voice =
+                    Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_VOICE").unwrap_or_else(|| "alloy".to_string());
                 let default_format =
-                    std::env::var("FUDOKI_TTS_OPENAI_FORMAT").unwrap_or_else(|_| "mp3".to_string());
+                    Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_FORMAT").unwrap_or_else(|| "mp3".to_string());
                 let default_provider = std::env::var("FUDOKI_TTS_DEFAULT_PROVIDER").ok();
 
                 Self::enabled(
