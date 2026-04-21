@@ -26,6 +26,11 @@ test("provider state is stored in localStorage and defaults from backend metadat
   assert.ok(mainJsSource.includes("default_provider"));
 });
 
+test("system provider option is always available regardless of backend metadata shape", () => {
+  assert.ok(mainJsSource.includes("SYSTEM_TTS_PROVIDER_ID"));
+  assert.ok(mainJsSource.includes("Always include system provider"));
+});
+
 test("i18n includes labels for the new provider UI", () => {
   assert.ok(i18nSource.includes("ttsProviderLabel"));
   assert.ok(i18nSource.includes("ttsProviderSystem"));
@@ -38,4 +43,3 @@ test("styles include a compact provider status treatment", () => {
   assert.ok(stylesSource.includes(".tts-provider-status"));
   assert.ok(stylesSource.includes(".tts-provider-status.is-error"));
 });
-

@@ -2237,6 +2237,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   let highlightTimeout = null; // 高亮定时器存储当前播放的文本用于重复播放
   let progressTimer = null; // 顶部进度条的计时器（TTS边界事件不可用时的回退）
   // TTS provider selection / remote playback
+  const SYSTEM_TTS_PROVIDER_ID = 'system';
   let ttsProvidersMetadata = null;
   let remoteTtsPlayer = null;
   let remoteTtsPlayerState = 'idle';
@@ -3953,11 +3954,15 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   }
 
   function getKnownProviderIds() {
-    if (!ttsProvidersMetadata || !Array.isArray(ttsProvidersMetadata.providers)) {
-      return ['system'];
+    const ids = [SYSTEM_TTS_PROVIDER_ID];
+    if (ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)) {
+      ttsProvidersMetadata.providers.forEach((p) => {
+        const id = p && p.id;
+        if (!id || id === SYSTEM_TTS_PROVIDER_ID) return;
+        if (!ids.includes(id)) ids.push(id);
+      });
     }
-    const ids = ttsProvidersMetadata.providers.map((p) => p && p.id).filter(Boolean);
-    return ids.length ? ids : ['system'];
+    return ids;
   }
 
   function getSelectedTtsProviderId() {
@@ -3990,15 +3995,15 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const selects = getAllTtsProviderSelectEls();
     if (!selects.length) return;
 
-    // Always include system; include remote only when backend exposes it.
-    const providers = (() => {
-      if (ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)) {
-        return ttsProvidersMetadata.providers;
-      }
-      return [{ id: 'system', status: 'available' }];
-    })();
-
-    const providerIds = providers.map((p) => p && p.id).filter(Boolean);
+    // Always include system provider even if backend metadata is missing/malformed.
+    const providerIds = [SYSTEM_TTS_PROVIDER_ID];
+    if (ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)) {
+      ttsProvidersMetadata.providers.forEach((p) => {
+        const id = p && p.id;
+        if (!id || id === SYSTEM_TTS_PROVIDER_ID) return;
+        if (!providerIds.includes(id)) providerIds.push(id);
+      });
+    }
     const selected = getSelectedTtsProviderId();
 
     selects.forEach((sel) => {
@@ -4006,7 +4011,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
       providerIds.forEach((id) => {
         const opt = document.createElement('option');
         opt.value = id;
-        if (id === 'system') opt.textContent = t('ttsProviderSystem');
+        if (id === SYSTEM_TTS_PROVIDER_ID) opt.textContent = t('ttsProviderSystem');
         else if (id === 'openai-compatible') opt.textContent = t('ttsProviderRemote');
         else opt.textContent = id;
         sel.appendChild(opt);
@@ -4020,12 +4025,16 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
 
   function updateSelectedProviderStatus() {
     const providerId = getSelectedTtsProviderId();
+    if (providerId === SYSTEM_TTS_PROVIDER_ID) {
+      setTtsProviderStatus({ text: t('ttsStatusAvailable'), isError: false });
+      return;
+    }
     const provider =
       ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)
         ? ttsProvidersMetadata.providers.find((p) => p && p.id === providerId)
         : null;
 
-    if (providerId !== 'system' && providerId && (remoteTtsPlayerState === 'loading' || remoteTtsPlayerState === 'playing')) {
+    if (providerId !== SYSTEM_TTS_PROVIDER_ID && providerId && (remoteTtsPlayerState === 'loading' || remoteTtsPlayerState === 'playing')) {
       // Keep this compact and language-agnostic to avoid a string explosion.
       setTtsProviderStatus({ text: remoteTtsPlayerState === 'loading' ? 'Loading...' : t('ttsStatusAvailable'), isError: false });
       return;
@@ -4070,16 +4079,16 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
         try { return localStorage.getItem(LS.ttsProvider); } catch (_) { return null; }
       })();
       const known = new Set(getKnownProviderIds());
-      const defaultProvider = ttsProvidersMetadata && ttsProvidersMetadata.default_provider ? ttsProvidersMetadata.default_provider : 'system';
-      const initial = stored && known.has(stored) ? stored : (known.has(defaultProvider) ? defaultProvider : 'system');
+      const defaultProvider = ttsProvidersMetadata && ttsProvidersMetadata.default_provider ? ttsProvidersMetadata.default_provider : SYSTEM_TTS_PROVIDER_ID;
+      const initial = stored && known.has(stored) ? stored : (known.has(defaultProvider) ? defaultProvider : SYSTEM_TTS_PROVIDER_ID);
       setSelectedTtsProviderId(initial, { persist: true });
 
       updateSelectedProviderStatus();
     } catch (e) {
       // Keep System available even if provider discovery fails.
-      ttsProvidersMetadata = { default_provider: 'system', providers: [{ id: 'system', status: 'available' }] };
+      ttsProvidersMetadata = { default_provider: SYSTEM_TTS_PROVIDER_ID, providers: [{ id: SYSTEM_TTS_PROVIDER_ID, status: 'available' }] };
       renderTtsProviderOptions();
-      setSelectedTtsProviderId('system', { persist: false });
+      setSelectedTtsProviderId(SYSTEM_TTS_PROVIDER_ID, { persist: false });
       setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
     }
   }
@@ -4088,7 +4097,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const providerId = getSelectedTtsProviderId();
 
     // Tokens always use system TTS, even when remote is selected.
-    if (mode === 'token' || providerId === 'system') {
+    if (mode === 'token' || providerId === SYSTEM_TTS_PROVIDER_ID) {
       stopRemotePlayback();
       speak(text);
       return;
