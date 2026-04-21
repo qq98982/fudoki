@@ -3964,7 +3964,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   }
 
   function getAllRemoteTtsModelSelectEls() {
-    const ids = ['remoteTtsModelSelect', 'sidebarRemoteTtsModelSelect'];
+    const ids = ['remoteTtsModelSelect', 'sidebarRemoteTtsModelSelect', 'headerRemoteTtsModelSelect'];
     const els = [];
     ids.forEach((id) => {
       const el = document.getElementById(id);
@@ -3974,7 +3974,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   }
 
   function getAllRemoteTtsVoiceSelectEls() {
-    const ids = ['remoteTtsVoiceSelect', 'sidebarRemoteTtsVoiceSelect'];
+    const ids = ['remoteTtsVoiceSelect', 'sidebarRemoteTtsVoiceSelect', 'headerRemoteTtsVoiceSelect'];
     const els = [];
     ids.forEach((id) => {
       const el = document.getElementById(id);
@@ -4188,12 +4188,20 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     getAllRemoteTtsModelSelectEls().forEach((sel) => {
       sel.disabled = !isRemote;
       const group = sel.closest('.control-group');
-      if (group) group.style.display = hasRemoteProvider ? '' : 'none';
+      if (group) {
+        group.style.display = hasRemoteProvider ? '' : 'none';
+      } else {
+        sel.style.display = hasRemoteProvider ? '' : 'none';
+      }
     });
     getAllRemoteTtsVoiceSelectEls().forEach((sel) => {
       sel.disabled = !isRemote;
       const group = sel.closest('.control-group');
-      if (group) group.style.display = hasRemoteProvider ? '' : 'none';
+      if (group) {
+        group.style.display = hasRemoteProvider ? '' : 'none';
+      } else {
+        sel.style.display = hasRemoteProvider ? '' : 'none';
+      }
     });
   }
 

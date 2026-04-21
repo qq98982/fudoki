@@ -18,6 +18,8 @@ test("settings markup includes a provider selector and provider status slot", ()
   assert.ok(mainJsSource.includes("ttsProviderStatus"));
   assert.ok(mainJsSource.includes("remoteTtsModelSelect"));
   assert.ok(mainJsSource.includes("remoteTtsVoiceSelect"));
+  assert.ok(mainJsSource.includes("headerRemoteTtsModelSelect"));
+  assert.ok(mainJsSource.includes("headerRemoteTtsVoiceSelect"));
 });
 
 test("main-js loads provider metadata from backend helpers", () => {

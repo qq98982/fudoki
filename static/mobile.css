@@ -535,6 +535,15 @@
   font-size: 12px;
   padding: 4px 8px;
 }
+
+#headerRemoteTtsModelSelect,
+#headerRemoteTtsVoiceSelect {
+  min-width: 110px;
+  max-width: 150px;
+  height: 30px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
 .sidebar-scroll {
   height: 94vh;
 }
