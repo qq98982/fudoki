@@ -212,6 +212,53 @@ async fn from_env_requires_model_to_enable_online_provider() {
 }
 
 #[tokio::test]
+async fn from_env_clamps_invalid_default_provider_when_online_is_configured() {
+    let _guard = env_lock().lock().unwrap();
+
+    let keys = [
+        "FUDOKI_TTS_OPENAI_BASE_URL",
+        "FUDOKI_TTS_OPENAI_API_KEY",
+        "FUDOKI_TTS_OPENAI_MODEL",
+        "FUDOKI_TTS_OPENAI_VOICE",
+        "FUDOKI_TTS_OPENAI_FORMAT",
+        "FUDOKI_TTS_DEFAULT_PROVIDER",
+    ];
+
+    let env = EnvGuard::new(&keys);
+    for k in keys {
+        env.remove(k);
+    }
+
+    env.set("FUDOKI_TTS_OPENAI_BASE_URL", "https://example.invalid/v1");
+    env.set("FUDOKI_TTS_OPENAI_API_KEY", "test-key");
+    env.set("FUDOKI_TTS_OPENAI_MODEL", "gpt-4o-mini-tts");
+    env.set("FUDOKI_TTS_OPENAI_VOICE", "voice-from-env");
+    env.set("FUDOKI_TTS_OPENAI_FORMAT", "format-from-env");
+    env.set("FUDOKI_TTS_DEFAULT_PROVIDER", "not-a-real-provider");
+
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::from_env());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tts/providers")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let providers = json["providers"].as_array().unwrap();
+
+    assert_eq!(providers.len(), 2);
+    assert_eq!(json["default_provider"], "openai-compatible");
+}
+
+#[tokio::test]
 #[cfg(debug_assertions)]
 async fn providers_endpoint_fails_closed_when_last_error_mutex_is_poisoned() {
     let tts = TtsConfig::enabled(

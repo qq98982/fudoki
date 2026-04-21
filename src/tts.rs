@@ -47,7 +47,10 @@ impl TtsConfig {
         }
     }
 
-    pub fn enabled(openai_compatible: OpenAiCompatibleConfig, default_provider: Option<String>) -> Self {
+    pub fn enabled(
+        openai_compatible: OpenAiCompatibleConfig,
+        default_provider: Option<String>,
+    ) -> Self {
         let openai_id = "openai-compatible".to_string();
         Self {
             openai_compatible: Some(openai_compatible),
@@ -63,8 +66,8 @@ impl TtsConfig {
 
         match (base_url, api_key, model) {
             (Some(base_url), Some(api_key), Some(model)) => {
-                let default_voice =
-                    std::env::var("FUDOKI_TTS_OPENAI_VOICE").unwrap_or_else(|_| "alloy".to_string());
+                let default_voice = std::env::var("FUDOKI_TTS_OPENAI_VOICE")
+                    .unwrap_or_else(|_| "alloy".to_string());
                 let default_format =
                     std::env::var("FUDOKI_TTS_OPENAI_FORMAT").unwrap_or_else(|_| "mp3".to_string());
                 let default_provider = std::env::var("FUDOKI_TTS_DEFAULT_PROVIDER").ok();
@@ -86,6 +89,7 @@ impl TtsConfig {
 
     pub fn providers_response(&self) -> TtsProvidersResponse {
         let mut providers = Vec::new();
+        let has_online = self.openai_compatible.is_some();
 
         providers.push(TtsProviderView {
             id: "system".to_string(),
@@ -117,8 +121,15 @@ impl TtsConfig {
             });
         }
 
+        let default_provider = match self.default_provider.as_str() {
+            "system" => "system".to_string(),
+            "openai-compatible" if has_online => "openai-compatible".to_string(),
+            _ if has_online => "openai-compatible".to_string(),
+            _ => "system".to_string(),
+        };
+
         TtsProvidersResponse {
-            default_provider: self.default_provider.clone(),
+            default_provider,
             providers,
         }
     }
