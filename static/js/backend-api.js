@@ -63,11 +63,48 @@ export async function lookupDictionaryRequest(term, fetcher = fetch) {
   return response.json();
 }
 
+export async function fetchTtsProviders(fetcher = fetch) {
+  const response = await fetcher("/api/tts/providers");
+  if (!response.ok) {
+    throw new Error(`tts providers failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function requestRemoteSpeech(payload, fetcher = fetch) {
+  const response = await fetcher("/api/tts/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let backendMessage = null;
+    try {
+      const data = await response.json();
+      backendMessage =
+        data && data.error && typeof data.error.message === "string" ? data.error.message : null;
+    } catch (_error) {
+      // Ignore parse errors and fall back to a generic status-based message.
+    }
+
+    if (backendMessage) {
+      throw new Error(backendMessage);
+    }
+
+    throw new Error(`tts speak failed: ${response.status}`);
+  }
+
+  return response;
+}
+
 if (typeof window !== "undefined") {
   window.FudokiBackendApi = {
     resolveTtsText,
     waitForBackendReady,
     analyzeTextRequest,
     lookupDictionaryRequest,
+    fetchTtsProviders,
+    requestRemoteSpeech,
   };
 }
