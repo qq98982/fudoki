@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use axum::http::{header, StatusCode};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct OpenAiCompatibleConfig {
@@ -9,6 +10,36 @@ pub struct OpenAiCompatibleConfig {
     pub model: String,
     pub default_voice: String,
     pub default_format: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SpeakRequest {
+    #[serde(default)]
+    pub provider: Option<String>,
+    pub text: String,
+    #[serde(default)]
+    pub voice: Option<String>,
+    #[serde(default)]
+    pub format: Option<String>,
+    #[serde(default)]
+    pub speed: Option<f32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ApiErrorBody {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ApiErrorResponse {
+    pub error: ApiErrorBody,
+}
+
+#[derive(Clone, Debug)]
+pub struct SynthesizedSpeech {
+    pub content_type: String,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -148,6 +179,110 @@ impl TtsConfig {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(error.into());
         }
+    }
+
+    fn clear_last_error(&self) {
+        if let Ok(mut guard) = self.last_error.lock() {
+            *guard = None;
+        }
+    }
+
+    fn api_error(code: &'static str, message: impl Into<String>) -> ApiErrorResponse {
+        ApiErrorResponse {
+            error: ApiErrorBody {
+                code: code.to_string(),
+                message: message.into(),
+            },
+        }
+    }
+
+    pub async fn synthesize(
+        &self,
+        request: &SpeakRequest,
+    ) -> Result<SynthesizedSpeech, (StatusCode, ApiErrorResponse)> {
+        let provider = request
+            .provider
+            .as_deref()
+            .unwrap_or(self.default_provider.as_str());
+
+        if provider != "openai-compatible" {
+            let err = Self::api_error(
+                "tts_bad_request",
+                format!("Unsupported TTS provider: {provider}"),
+            );
+            self.set_last_error(err.error.message.clone());
+            return Err((StatusCode::BAD_REQUEST, err));
+        }
+
+        let cfg = match &self.openai_compatible {
+            Some(cfg) => cfg,
+            None => {
+                let err = Self::api_error(
+                    "tts_bad_request",
+                    "TTS provider not configured: openai-compatible",
+                );
+                self.set_last_error(err.error.message.clone());
+                return Err((StatusCode::BAD_REQUEST, err));
+            }
+        };
+
+        let base_url = cfg.base_url.trim_end_matches('/');
+        let url = format!("{base_url}/audio/speech");
+
+        let voice = request.voice.as_deref().unwrap_or(cfg.default_voice.as_str());
+        let response_format = request
+            .format
+            .as_deref()
+            .unwrap_or(cfg.default_format.as_str());
+        let speed = request.speed.unwrap_or(1.0);
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(url)
+            .bearer_auth(&cfg.api_key)
+            .json(&serde_json::json!({
+                "model": cfg.model,
+                "input": request.text,
+                "voice": voice,
+                "response_format": response_format,
+                "speed": speed,
+            }))
+            .send()
+            .await
+            .map_err(|_e| {
+                let message = "TTS request failed: upstream request error".to_string();
+                let err = Self::api_error("tts_request_failed", message.clone());
+                self.set_last_error(message);
+                (StatusCode::BAD_GATEWAY, err)
+            })?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let message = format!("TTS request failed: {status}");
+            let err = Self::api_error("tts_request_failed", message.clone());
+            self.set_last_error(message);
+            return Err((StatusCode::BAD_GATEWAY, err));
+        }
+
+        let content_type = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("audio/mpeg")
+            .to_string();
+
+        let bytes = resp.bytes().await.map_err(|_e| {
+            let message = "TTS request failed: upstream response error".to_string();
+            let err = Self::api_error("tts_request_failed", message.clone());
+            self.set_last_error(message);
+            (StatusCode::BAD_GATEWAY, err)
+        })?;
+
+        self.clear_last_error();
+        Ok(SynthesizedSpeech {
+            content_type,
+            bytes: bytes.to_vec(),
+        })
     }
 
     #[cfg(debug_assertions)]

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
@@ -13,7 +13,7 @@ use tower_http::services::ServeDir;
 use crate::analyzer::Analyzer;
 use crate::dictionary::{DictionaryPayload, DictionaryService};
 use crate::models::{AnalyzeRequest, AnalyzeResponse};
-use crate::tts::{TtsConfig, TtsProvidersResponse};
+use crate::tts::{SpeakRequest, TtsConfig, TtsProvidersResponse};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -74,6 +74,16 @@ async fn tts_providers(State(state): State<AppState>) -> Json<TtsProvidersRespon
     Json(state.tts.providers_response())
 }
 
+async fn tts_speak(
+    State(state): State<AppState>,
+    Json(payload): Json<SpeakRequest>,
+) -> impl IntoResponse {
+    match state.tts.synthesize(&payload).await {
+        Ok(speech) => ([(header::CONTENT_TYPE, speech.content_type)], speech.bytes).into_response(),
+        Err((status, err)) => (status, Json(err)).into_response(),
+    }
+}
+
 pub fn build_router_with_tts_config(tts: TtsConfig) -> Router {
     let state = AppState {
         analyzer: Arc::new(Analyzer::new()),
@@ -88,6 +98,7 @@ pub fn build_router_with_tts_config(tts: TtsConfig) -> Router {
         .route("/api/analyze", post(analyze))
         .route("/api/dictionary", get(dictionary_lookup))
         .route("/api/tts/providers", get(tts_providers))
+        .route("/api/tts/speak", post(tts_speak))
         .nest_service("/static", ServeDir::new("static"))
         .with_state(state)
 }
