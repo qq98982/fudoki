@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   analyzeTextRequest,
@@ -7,6 +10,11 @@ import {
   resolveTtsText,
   waitForBackendReady,
 } from "../../static/js/backend-api.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const mainJsSource = readFileSync(resolve(__dirname, "../../static/main-js.js"), "utf8");
+const ttsJsSource = readFileSync(resolve(__dirname, "../../static/js/tts.js"), "utf8");
 
 test("backend api exports expected helpers", () => {
   assert.equal(typeof resolveTtsText, "function");
@@ -17,6 +25,29 @@ test("backend api exports expected helpers", () => {
 
 test("resolveTtsText prefers tts_text over reading", () => {
   assert.equal(resolveTtsText({ reading: "ブラウザー", tts_text: "browser" }), "browser");
+});
+
+test("resolveTtsText falls back to reading when tts_text is missing", () => {
+  assert.equal(resolveTtsText({ reading: "リアクト", surface: "React" }), "リアクト");
+});
+
+test("resolveTtsText falls back to surface when reading and tts_text are empty", () => {
+  assert.equal(resolveTtsText({ reading: "", tts_text: "", surface: "browser" }), "browser");
+});
+
+test("main-js analyzes and looks up via backend helper APIs", () => {
+  assert.ok(mainJsSource.includes("window.FudokiBackendApi.analyzeTextRequest"));
+  assert.ok(mainJsSource.includes("window.FudokiBackendApi.lookupDictionaryRequest"));
+});
+
+test("main-js bootstraps analysis only after backend readiness", () => {
+  assert.ok(mainJsSource.includes("async function bootstrapAnalysis()"));
+  assert.ok(mainJsSource.includes("window.FudokiBackendApi.waitForBackendReady"));
+  assert.ok(mainJsSource.includes("bootstrapAnalysis();"));
+});
+
+test("tts playback resolves speech text via backend helper", () => {
+  assert.ok(ttsJsSource.includes("window.FudokiBackendApi.resolveTtsText"));
 });
 
 test("waitForBackendReady retries until health endpoint returns ready", async () => {

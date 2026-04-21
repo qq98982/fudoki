@@ -4052,23 +4052,17 @@ Try Fudoki and enjoy Japanese language analysis!`;
 
   // 文本分析功能
   async function analyzeText() {
-    let text = textInput.value.trim();
-    
-    if (!text) {
+    const raw = textInput.value.trim();
+
+    if (!raw) {
       showEmptyState();
       return;
     }
 
-    // 预处理：过滤括号内容
-    text = filterParentheses(text);
-
     showLoadingState();
 
     try {
-      const seg = await initSegmenter();
-      const result = await seg.segment(text);
-      
-      // 使用原来的分词逻辑，按行显示结果
+      const result = await window.FudokiBackendApi.analyzeTextRequest(filterParentheses(raw));
       displayResults(result);
     } catch (error) {
       console.error('分析错误:', error);
@@ -4390,7 +4384,7 @@ Try Fudoki and enjoy Japanese language analysis!`;
         const readingText = formatReading(tokenForUi, getReadingScript());
         
         // 确定播放时使用的文本（考虑助词「は」的特殊情况）
-        let playText = reading || surface;
+        let playText = resolveTokenSpeechText(tokenForUi, surface);
         if (surface === 'は' && pos[0] === '助詞' && isHaParticleReadingEnabled()) {
           playText = 'わ';
         }
@@ -4437,6 +4431,17 @@ Try Fudoki and enjoy Japanese language analysis!`;
     syncReadingLineAttributes(isReadingMode);
   }
 
+  function resolveTokenSpeechText(tokenData, fallbackText = '') {
+    const token = tokenData && typeof tokenData === 'object' ? tokenData : { surface: fallbackText };
+    if (window.FudokiBackendApi && typeof window.FudokiBackendApi.resolveTtsText === 'function') {
+      const resolved = window.FudokiBackendApi.resolveTtsText(token);
+      if (typeof resolved === 'string' && resolved.length > 0) {
+        return resolved;
+      }
+    }
+    return token.reading || token.surface || fallbackText || '';
+  }
+
   // 播放单个词汇
   window.playToken = function(text, event, tokenData) {
     if (event) {
@@ -4465,11 +4470,7 @@ Try Fudoki and enjoy Japanese language analysis!`;
       }
     }
 
-    // 如果提供了或解析出了tokenData，优先使用reading字段进行朗读
-    let textToSpeak = text;
-    if (resolvedToken && resolvedToken.reading) {
-      textToSpeak = resolvedToken.reading;
-    }
+    let textToSpeak = resolveTokenSpeechText(resolvedToken, text);
     
     // 检查自定义词典，如果有自定义读音，优先使用
     if (resolvedToken && window.FudokiDict && window.FudokiDict.getTechOverride) {
@@ -4538,7 +4539,7 @@ Try Fudoki and enjoy Japanese language analysis!`;
         if (surface) {
           if (isPlaying) stopSpeaking();
           highlightToken(surface, element, { scroll: false });
-          let textToSpeak = tokenData.reading || surface;
+          let textToSpeak = resolveTokenSpeechText(tokenData, surface);
           // 只有在surface确实是单个"は"字符且为助词时才转换
           if (surface === 'は' && tokenData.pos && Array.isArray(tokenData.pos) && tokenData.pos[0] === '助詞') {
             textToSpeak = 'わ';
@@ -4655,12 +4656,6 @@ Try Fudoki and enjoy Japanese language analysis!`;
         }
       }
 
-      // 确保词典服务已初始化
-      if (!window.dictionaryService.isReady()) {
-        translationContent.textContent = t('dict_init') || '正在初始化词典...';
-        await window.dictionaryService.init();
-      }
-      
       // 查询翻译：优先使用可查询的日文形式
       // 1) 如果 lemma 为 '*' 或为拉丁字母，则优先使用 reading
       // 2) 若仍无结果，使用别名映射（如 アプリ -> アプリケーション，Web -> ウェブ）
@@ -4680,9 +4675,9 @@ Try Fudoki and enjoy Japanese language analysis!`;
         query = reading; // 将拉丁字母词转为片假名读音查询
       }
 
-      let detailedInfo = await window.dictionaryService.getDetailedInfo(query);
+      let detailedInfo = await window.FudokiBackendApi.lookupDictionaryRequest(query);
       if (!detailedInfo && aliases[query]) {
-        detailedInfo = await window.dictionaryService.getDetailedInfo(aliases[query]);
+        detailedInfo = await window.FudokiBackendApi.lookupDictionaryRequest(aliases[query]);
       }
       
       if (detailedInfo && detailedInfo.senses && detailedInfo.senses.length > 0) {
@@ -4855,8 +4850,7 @@ Try Fudoki and enjoy Japanese language analysis!`;
         if (tokenDataAttr) {
           try {
             const tokenData = JSON.parse(tokenDataAttr);
-            // 优先使用reading字段，如果没有则使用surface
-            let textToSpeak = tokenData.reading || tokenData.surface || '';
+            let textToSpeak = resolveTokenSpeechText(tokenData);
             
             // 检查自定义词典，如果有自定义读音，优先使用
             if (window.FudokiDict && window.FudokiDict.getTechOverride) {
@@ -4921,7 +4915,7 @@ Try Fudoki and enjoy Japanese language analysis!`;
               if (tokenDataAttr) {
                 try {
                   const tokenData = JSON.parse(tokenDataAttr);
-                  let textToSpeak = tokenData.reading || tokenData.surface || '';
+                  let textToSpeak = resolveTokenSpeechText(tokenData);
                   
                   // 检查自定义词典
                   if (window.FudokiDict && window.FudokiDict.getTechOverride) {
@@ -4981,7 +4975,7 @@ Try Fudoki and enjoy Japanese language analysis!`;
             if (tokenDataAttr) {
               try {
                 const tokenData = JSON.parse(tokenDataAttr);
-                let textToSpeak = tokenData.reading || tokenData.surface || '';
+                let textToSpeak = resolveTokenSpeechText(tokenData);
                 
                 if (window.FudokiDict && window.FudokiDict.getTechOverride) {
                   const techOverride = window.FudokiDict.getTechOverride(tokenData);
@@ -5709,12 +5703,24 @@ Try Fudoki and enjoy Japanese language analysis!`;
   // 全局函数，供其他地方调用
   window.analyzeText = analyzeText;
 
-  // 初始化时如果有文本则自动分析
-  if (textInput.value.trim()) {
-    setTimeout(() => analyzeText(), 100);
-  } else {
-    showEmptyState();
+  async function bootstrapAnalysis() {
+    try {
+      const health = await window.FudokiBackendApi.waitForBackendReady();
+      if (!health || health.status !== 'ready') {
+        showErrorState('backend not ready');
+        return;
+      }
+      if (textInput.value.trim()) {
+        await analyzeText();
+      } else {
+        showEmptyState();
+      }
+    } catch (error) {
+      showErrorState(error && error.message ? error.message : 'backend not ready');
+    }
   }
+
+  bootstrapAnalysis();
   // 初始化顶部编辑工具栏
   try { initEditorToolbar(); } catch (_) {}
 

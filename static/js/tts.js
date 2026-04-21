@@ -502,6 +502,17 @@
     window.updatePlayButtonStates && window.updatePlayButtonStates();
   };
 
+  function resolveTokenSpeechText(tokenData, fallbackText = '') {
+    const token = tokenData && typeof tokenData === 'object' ? tokenData : { surface: fallbackText };
+    if (window.FudokiBackendApi && typeof window.FudokiBackendApi.resolveTtsText === 'function') {
+      const resolved = window.FudokiBackendApi.resolveTtsText(token);
+      if (typeof resolved === 'string' && resolved.length > 0) {
+        return resolved;
+      }
+    }
+    return token.reading || token.surface || fallbackText || '';
+  }
+
   window.playLine = window.playLine || function(lineIndex) {
     if (window.isPlaying) { window.stopSpeaking(); return; }
     const lineContainer = document.querySelectorAll('.line-container')[lineIndex];
@@ -512,7 +523,7 @@
         if (tokenDataAttr) {
           try {
             const tokenData = JSON.parse(tokenDataAttr);
-            let textToSpeak = tokenData.reading || tokenData.surface || '';
+            let textToSpeak = resolveTokenSpeechText(tokenData);
             if (tokenData.surface === 'は' && tokenData.pos && Array.isArray(tokenData.pos) && tokenData.pos[0] === '助詞' && typeof window.isHaParticleReadingEnabled === 'function' && window.isHaParticleReadingEnabled()) {
               textToSpeak = 'わ';
             }
@@ -541,7 +552,7 @@
           if (tokenDataAttr) {
             try {
               const tokenData = JSON.parse(tokenDataAttr);
-              let textToSpeak = tokenData.reading || tokenData.surface || '';
+              let textToSpeak = resolveTokenSpeechText(tokenData);
               if (tokenData.surface === 'は' && tokenData.pos && Array.isArray(tokenData.pos) && tokenData.pos[0] === '助詞' && typeof window.isHaParticleReadingEnabled === 'function' && window.isHaParticleReadingEnabled()) {
                 textToSpeak = 'わ';
               }
@@ -568,5 +579,4 @@
     if (text) { window.speak(text); } else if (typeof window.showNotification === 'function') { window.showNotification(t('pleaseInputText') || '请先输入文本', 'warning'); }
   };
 })();
-
 
