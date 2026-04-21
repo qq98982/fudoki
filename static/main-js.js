@@ -4184,15 +4184,16 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
 
   function updateRemoteTtsControlState() {
     const isRemote = getSelectedTtsProviderId() === 'openai-compatible';
+    const hasRemoteProvider = getKnownProviderIds().includes('openai-compatible');
     getAllRemoteTtsModelSelectEls().forEach((sel) => {
       sel.disabled = !isRemote;
       const group = sel.closest('.control-group');
-      if (group) group.style.display = isRemote ? '' : 'none';
+      if (group) group.style.display = hasRemoteProvider ? '' : 'none';
     });
     getAllRemoteTtsVoiceSelectEls().forEach((sel) => {
       sel.disabled = !isRemote;
       const group = sel.closest('.control-group');
-      if (group) group.style.display = isRemote ? '' : 'none';
+      if (group) group.style.display = hasRemoteProvider ? '' : 'none';
     });
   }
 
