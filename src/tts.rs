@@ -59,11 +59,10 @@ impl TtsConfig {
     pub fn from_env() -> Self {
         let base_url = std::env::var("FUDOKI_TTS_OPENAI_BASE_URL").ok();
         let api_key = std::env::var("FUDOKI_TTS_OPENAI_API_KEY").ok();
+        let model = std::env::var("FUDOKI_TTS_OPENAI_MODEL").ok();
 
-        match (base_url, api_key) {
-            (Some(base_url), Some(api_key)) => {
-                let model =
-                    std::env::var("FUDOKI_TTS_OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini-tts".to_string());
+        match (base_url, api_key, model) {
+            (Some(base_url), Some(api_key), Some(model)) => {
                 let default_voice =
                     std::env::var("FUDOKI_TTS_OPENAI_VOICE").unwrap_or_else(|_| "alloy".to_string());
                 let default_format =
