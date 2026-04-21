@@ -2193,9 +2193,7 @@ const headerSpeedValue = $('headerSpeedValue');
 
 UIはシンプルで、ダークモード（Dark Mode）やカスタムスピード（Speed Control）などのSettingsも充実。
 
-日本語学習者やNLPエンジニア、そして好奇心旺盛な皆さんに最適なツールです。
-
-Try Fudoki and enjoy Japanese language analysis!`;
+日本語学習者やNLPエンジニア、そして好奇心旺盛な皆さんに最適なツールです。`;
 
 
   // 初始化日语分词器
@@ -3615,12 +3613,23 @@ Try Fudoki and enjoy Japanese language analysis!`;
     const normalized = String(text || '').replace(/\r\n/g, '\n');
     const segments = [];
     // 停顿时间设置（毫秒）
-    const heavyPause = 800;      // 句号、感叹号、问号、换行 - 长停顿
+    const heavyPause = 800;      // 句号、感叹号、问号 - 长停顿
     const mediumPause = 400;     // 逗号、顿号、分号 - 中等停顿
     const lightPause = 200;      // 冒号 - 轻微停顿
     const ellipsisPause = 1000;  // 省略号 - 更长停顿
+    const linePause = 280;       // 普通换行 - 轻中停顿
+    const titleLinePause = 950;  // 标题换行 - 明显停顿
     
     let buffer = '';
+
+    const isTitleLikeLine = (value) => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) return false;
+      if (trimmed.length > 16) return false;
+      if (/[。！？!?：:；;]$/.test(trimmed)) return false;
+      if (/^[#>\-\s]+$/.test(trimmed)) return false;
+      return true;
+    };
     
     const pushSegment = (pause) => {
       const segmentText = buffer.trim();
@@ -3636,7 +3645,10 @@ Try Fudoki and enjoy Japanese language analysis!`;
       const next2 = normalized[i + 2] || '';
       
       if (ch === '\n') {
-        pushSegment(heavyPause);
+        const currentLine = buffer.trim();
+        const remaining = normalized.slice(i + 1).trim();
+        const pause = (remaining && isTitleLikeLine(currentLine)) ? titleLinePause : linePause;
+        pushSegment(pause);
         continue;
       }
       
