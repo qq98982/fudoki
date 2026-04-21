@@ -44,6 +44,10 @@ async fn index() -> impl IntoResponse {
     Html(std::fs::read_to_string("index.html").expect("read index.html"))
 }
 
+async fn login() -> impl IntoResponse {
+    Html(std::fs::read_to_string("login.html").expect("read login.html"))
+}
+
 async fn analyze(
     State(state): State<AppState>,
     Json(payload): Json<AnalyzeRequest>,
@@ -72,6 +76,7 @@ pub fn build_router() -> Router {
 
     Router::new()
         .route("/", get(index))
+        .route("/login.html", get(login))
         .route("/api/health", get(health))
         .route("/api/analyze", post(analyze))
         .route("/api/dictionary", get(dictionary_lookup))

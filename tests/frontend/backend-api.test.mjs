@@ -13,6 +13,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const indexHtmlSource = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
 const mainJsSource = readFileSync(resolve(__dirname, "../../static/main-js.js"), "utf8");
 const ttsJsSource = readFileSync(resolve(__dirname, "../../static/js/tts.js"), "utf8");
 
@@ -38,6 +39,12 @@ test("resolveTtsText falls back to surface when reading and tts_text are empty",
 test("main-js analyzes and looks up via backend helper APIs", () => {
   assert.ok(mainJsSource.includes("window.FudokiBackendApi.analyzeTextRequest"));
   assert.ok(mainJsSource.includes("window.FudokiBackendApi.lookupDictionaryRequest"));
+});
+
+test("index.html skips Firebase auth redirect on localhost", () => {
+  assert.ok(indexHtmlSource.includes("window.location.hostname"));
+  assert.ok(indexHtmlSource.includes("localhost"));
+  assert.ok(indexHtmlSource.includes("skipping Firebase auth redirect"));
 });
 
 test("main-js schedules debounced analysis on input changes", () => {

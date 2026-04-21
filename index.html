@@ -749,75 +749,88 @@
   <!-- JavaScript文件 -->
   <!-- Firebase SDK -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDocs, getDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
-    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+    const localStandaloneHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+    const isLocalStandalone = localStandaloneHosts.has(window.location.hostname);
+    window.FudokiLocalMode = isLocalStandalone;
 
-    // Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyCULsnd2JYsVTbMP-XTSOaCFS7ae4-a2hw",
-      authDomain: "fudoki-f370e.firebaseapp.com",
-      projectId: "fudoki-f370e",
-      storageBucket: "fudoki-f370e.firebasestorage.app",
-      messagingSenderId: "1031570984525",
-      appId: "1:1031570984525:web:6b173b3764a99ed0091604",
-      measurementId: "G-747S3VQ0YJ"
-    };
+    if (isLocalStandalone) {
+      console.log('Local mode detected, skipping Firebase auth redirect.');
+    } else {
+      const [{ initializeApp }, firestoreModule, authModule] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js"),
+        import("https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js")
+      ]);
 
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
+      const { getFirestore, collection, doc, setDoc, getDocs, getDoc, deleteDoc, serverTimestamp } = firestoreModule;
+      const { getAuth, onAuthStateChanged, signOut } = authModule;
 
-    // 暴露到全局，供其他脚本使用
-    window.firebaseDB = db;
-    window.firebaseAuth = auth;
-    window.firebaseSignOut = () => signOut(auth); // 暴露 signOut 方法
-    window.firestoreHelpers = { collection, doc, setDoc, getDocs, getDoc, deleteDoc, serverTimestamp };
+      // Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyCULsnd2JYsVTbMP-XTSOaCFS7ae4-a2hw",
+        authDomain: "fudoki-f370e.firebaseapp.com",
+        projectId: "fudoki-f370e",
+        storageBucket: "fudoki-f370e.firebasestorage.app",
+        messagingSenderId: "1031570984525",
+        appId: "1:1031570984525:web:6b173b3764a99ed0091604",
+        measurementId: "G-747S3VQ0YJ"
+      };
 
-    // 检查用户登录状态
-    let authCheckCompleted = false;
-    onAuthStateChanged(auth, async (user) => {
-      if (authCheckCompleted) return; // 只执行一次
-      authCheckCompleted = true;
-      
-      if (!user) {
-        // 用户未登录，跳转到登录页
-        console.log('User not authenticated, redirecting to login...');
-        window.location.href = 'login.html';
-      } else {
-        // 用户已登录，更新 localStorage
-        console.log('User authenticated:', user.email);
-        localStorage.setItem('fudoki_user', JSON.stringify({
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL
-        }));
+      // Initialize Firebase
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      const auth = getAuth(app);
+
+      // 暴露到全局，供其他脚本使用
+      window.firebaseDB = db;
+      window.firebaseAuth = auth;
+      window.firebaseSignOut = () => signOut(auth); // 暴露 signOut 方法
+      window.firestoreHelpers = { collection, doc, setDoc, getDocs, getDoc, deleteDoc, serverTimestamp };
+
+      // 检查用户登录状态
+      let authCheckCompleted = false;
+      onAuthStateChanged(auth, async (user) => {
+        if (authCheckCompleted) return; // 只执行一次
+        authCheckCompleted = true;
         
-        // 登录成功后自动同步一次（延迟执行，等待页面完全加载）
-        setTimeout(async () => {
-          if (typeof window.performDataSync === 'function') {
-            console.log('Performing initial sync after login...');
-            try {
-              await window.performDataSync();
-              console.log('Initial sync completed');
-              
-              // 启动自动同步定时器
-              if (typeof window.startAutoSync === 'function') {
-                window.startAutoSync();
-              }
-            } catch (error) {
-              console.error('Initial sync failed:', error);
-              // 即使初始同步失败，也启动自动同步
-              if (typeof window.startAutoSync === 'function') {
-                window.startAutoSync();
+        if (!user) {
+          // 用户未登录，跳转到登录页
+          console.log('User not authenticated, redirecting to login...');
+          window.location.href = 'login.html';
+        } else {
+          // 用户已登录，更新 localStorage
+          console.log('User authenticated:', user.email);
+          localStorage.setItem('fudoki_user', JSON.stringify({
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL
+          }));
+          
+          // 登录成功后自动同步一次（延迟执行，等待页面完全加载）
+          setTimeout(async () => {
+            if (typeof window.performDataSync === 'function') {
+              console.log('Performing initial sync after login...');
+              try {
+                await window.performDataSync();
+                console.log('Initial sync completed');
+                
+                // 启动自动同步定时器
+                if (typeof window.startAutoSync === 'function') {
+                  window.startAutoSync();
+                }
+              } catch (error) {
+                console.error('Initial sync failed:', error);
+                // 即使初始同步失败，也启动自动同步
+                if (typeof window.startAutoSync === 'function') {
+                  window.startAutoSync();
+                }
               }
             }
-          }
-        }, 2000); // 2秒后执行，确保页面和 documentManager 已初始化
-      }
-    });
+          }, 2000); // 2秒后执行，确保页面和 documentManager 已初始化
+        }
+      });
+    }
   </script>
   
   <!-- EasyMDE Markdown 编辑器 -->

@@ -30,3 +30,20 @@ async fn static_main_js_is_served() {
 
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn login_page_is_served() {
+    let app = fudoki_backend::app::build_router();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/login.html")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
