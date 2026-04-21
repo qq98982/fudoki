@@ -20,6 +20,11 @@ const I18N = {
     voiceTitle: '音声設定',
     voiceSelectLabel: '音声を選択',
     selectVoice: '音声を選択...',
+    ttsProviderLabel: '音声エンジン',
+    ttsProviderSystem: 'System',
+    ttsProviderRemote: 'Remote',
+    ttsStatusAvailable: '利用可能',
+    ttsStatusRequestFailed: 'リクエスト失敗',
     speedLabel: '話速',
     playAll: '全文再生',
     displayTitle: '表示設定',
@@ -149,6 +154,11 @@ const I18N = {
     voiceTitle: 'Voice Settings',
     voiceSelectLabel: 'Voice',
     selectVoice: 'Select voice...',
+    ttsProviderLabel: 'TTS Provider',
+    ttsProviderSystem: 'System',
+    ttsProviderRemote: 'Remote',
+    ttsStatusAvailable: 'Available',
+    ttsStatusRequestFailed: 'Request failed',
     speedLabel: 'Speed',
     playAll: 'Play All',
     displayTitle: 'Display Settings',
@@ -279,6 +289,11 @@ const I18N = {
     voiceTitle: '语音设置',
     voiceSelectLabel: '语音选择',
     selectVoice: '选择语音...',
+    ttsProviderLabel: '语音引擎',
+    ttsProviderSystem: '系统',
+    ttsProviderRemote: '远程',
+    ttsStatusAvailable: '可用',
+    ttsStatusRequestFailed: '请求失败',
     speedLabel: '语速调节',
     playAll: '播放全文',
     displayTitle: '显示设置',
@@ -393,4 +408,3 @@ const I18N = {
     ,importConfirmOverwrite: '导入将覆盖当前数据与设置，是否继续？'
   }
 };
-

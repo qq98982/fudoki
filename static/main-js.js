@@ -82,6 +82,7 @@ const headerSpeedValue = $('headerSpeedValue');
     voiceURI: 'voiceURI', 
     rate: 'rate', 
     volume: 'volume',
+    ttsProvider: 'ttsProvider',
     texts: 'texts', 
     activeId: 'activeId',
     activeFolder: 'activeFolder',
@@ -1626,6 +1627,12 @@ const headerSpeedValue = $('headerSpeedValue');
       const s = voiceSelectLabel.querySelector('.label-text');
       if (s) s.textContent = t('voiceSelectLabel');
     }
+    const ttsProviderLabel = $('ttsProviderLabel');
+    if (ttsProviderLabel) {
+      ttsProviderLabel.title = t('ttsProviderLabel');
+      const s = ttsProviderLabel.querySelector('.label-text');
+      if (s) s.textContent = t('ttsProviderLabel');
+    }
     const speedLabel = $('speedLabel');
     if (speedLabel) {
       speedLabel.title = t('speedLabel');
@@ -1931,6 +1938,7 @@ const headerSpeedValue = $('headerSpeedValue');
     // 通用（modal）
     setText('voiceSettingsTitle', 'voiceTitle');
     setText('voiceSelectLabel', 'voiceSelectLabel');
+    setText('ttsProviderLabel', 'ttsProviderLabel');
     // 保留“选择语音...”占位选项
     const voiceSelect = document.getElementById('voiceSelect');
     if (voiceSelect) {
@@ -1969,6 +1977,7 @@ const headerSpeedValue = $('headerSpeedValue');
     // 侧边栏（如果存在）
     setText('sidebarVoiceSettingsTitle', 'voiceTitle');
     setText('sidebarVoiceSelectLabel', 'voiceSelectLabel');
+    setText('sidebarTtsProviderLabel', 'ttsProviderLabel');
     const sidebarVoiceSelect = document.getElementById('sidebarVoiceSelect');
     if (sidebarVoiceSelect) {
       const placeholder2 = sidebarVoiceSelect.querySelector('option[value=""]');
@@ -2000,6 +2009,10 @@ const headerSpeedValue = $('headerSpeedValue');
       dark: 'themeDark',
       auto: 'themeAuto'
     });
+
+    // Provider option labels are dynamic based on backend metadata.
+    try { renderTtsProviderOptions(); } catch (_) {}
+    try { updateSelectedProviderStatus(); } catch (_) {}
   }
 
   if (langFlagJA) langFlagJA.addEventListener('click', () => setLanguage('ja'));
@@ -2223,6 +2236,10 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   let currentHighlightedToken = null; // 当前高亮的词汇元素
   let highlightTimeout = null; // 高亮定时器存储当前播放的文本用于重复播放
   let progressTimer = null; // 顶部进度条的计时器（TTS边界事件不可用时的回退）
+  // TTS provider selection / remote playback
+  let ttsProvidersMetadata = null;
+  let remoteTtsPlayer = null;
+  let remoteTtsPlayerState = 'idle';
   // 播放状态：按字符总量线性推进
   let PLAY_STATE = { totalSegments: 0, totalChars: 0, charPrefix: [], current: 0 };
   let usingBoundaryProgress = false;
@@ -3876,6 +3893,246 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     speakWithPauses(text, rateOverride);
   }
 
+  function isRemotePlaybackActive() {
+    return remoteTtsPlayerState === 'loading' || remoteTtsPlayerState === 'playing';
+  }
+
+  function stopRemotePlayback() {
+    if (!remoteTtsPlayer) return;
+    try {
+      remoteTtsPlayer.stop();
+    } catch (_) {}
+  }
+
+  function stopAllPlayback() {
+    try { stopRemotePlayback(); } catch (_) {}
+    try { stopSpeaking(); } catch (_) {}
+  }
+
+  function ensureRemoteTtsPlayer() {
+    if (remoteTtsPlayer) return remoteTtsPlayer;
+    if (!window.FudokiRemoteTts || typeof window.FudokiRemoteTts.createRemoteTtsPlayer !== 'function') {
+      return null;
+    }
+    remoteTtsPlayer = window.FudokiRemoteTts.createRemoteTtsPlayer({
+      onStateChange: (state) => {
+        remoteTtsPlayerState = state;
+        // Keep the provider status UI updated while remote audio loads/plays.
+        try { updateSelectedProviderStatus(); } catch (_) {}
+      },
+    });
+    return remoteTtsPlayer;
+  }
+
+  function getAllTtsProviderSelectEls() {
+    const ids = ['ttsProviderSelect', 'sidebarTtsProviderSelect'];
+    const els = [];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) els.push(el);
+    });
+    return els;
+  }
+
+  function getAllTtsProviderStatusEls() {
+    const ids = ['ttsProviderStatus', 'sidebarTtsProviderStatus'];
+    const els = [];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) els.push(el);
+    });
+    return els;
+  }
+
+  function setTtsProviderStatus({ text, isError } = {}) {
+    const els = getAllTtsProviderStatusEls();
+    els.forEach((el) => {
+      el.textContent = String(text || '');
+      el.classList.toggle('is-error', !!isError);
+    });
+  }
+
+  function getKnownProviderIds() {
+    if (!ttsProvidersMetadata || !Array.isArray(ttsProvidersMetadata.providers)) {
+      return ['system'];
+    }
+    const ids = ttsProvidersMetadata.providers.map((p) => p && p.id).filter(Boolean);
+    return ids.length ? ids : ['system'];
+  }
+
+  function getSelectedTtsProviderId() {
+    // Prefer a currently-mounted select value (works for both modal + sidebar).
+    const selects = getAllTtsProviderSelectEls();
+    for (const sel of selects) {
+      if (sel && typeof sel.value === 'string' && sel.value) return sel.value;
+    }
+    try {
+      const stored = localStorage.getItem(LS.ttsProvider);
+      if (stored) return stored;
+    } catch (_) {}
+    return 'system';
+  }
+
+  function setSelectedTtsProviderId(providerId, { persist = true } = {}) {
+    const known = new Set(getKnownProviderIds());
+    const next = known.has(providerId) ? providerId : 'system';
+    getAllTtsProviderSelectEls().forEach((sel) => {
+      try { sel.value = next; } catch (_) {}
+    });
+    if (persist) {
+      try { localStorage.setItem(LS.ttsProvider, next); } catch (_) {}
+    }
+    updateSelectedProviderStatus();
+    return next;
+  }
+
+  function renderTtsProviderOptions() {
+    const selects = getAllTtsProviderSelectEls();
+    if (!selects.length) return;
+
+    // Always include system; include remote only when backend exposes it.
+    const providers = (() => {
+      if (ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)) {
+        return ttsProvidersMetadata.providers;
+      }
+      return [{ id: 'system', status: 'available' }];
+    })();
+
+    const providerIds = providers.map((p) => p && p.id).filter(Boolean);
+    const selected = getSelectedTtsProviderId();
+
+    selects.forEach((sel) => {
+      sel.innerHTML = '';
+      providerIds.forEach((id) => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        if (id === 'system') opt.textContent = t('ttsProviderSystem');
+        else if (id === 'openai-compatible') opt.textContent = t('ttsProviderRemote');
+        else opt.textContent = id;
+        sel.appendChild(opt);
+      });
+      // Ensure the value is valid after re-render.
+      if (providerIds.includes(selected)) {
+        sel.value = selected;
+      }
+    });
+  }
+
+  function updateSelectedProviderStatus() {
+    const providerId = getSelectedTtsProviderId();
+    const provider =
+      ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)
+        ? ttsProvidersMetadata.providers.find((p) => p && p.id === providerId)
+        : null;
+
+    if (providerId !== 'system' && providerId && (remoteTtsPlayerState === 'loading' || remoteTtsPlayerState === 'playing')) {
+      // Keep this compact and language-agnostic to avoid a string explosion.
+      setTtsProviderStatus({ text: remoteTtsPlayerState === 'loading' ? 'Loading...' : t('ttsStatusAvailable'), isError: false });
+      return;
+    }
+
+    if (!provider) {
+      setTtsProviderStatus({ text: '', isError: false });
+      return;
+    }
+    if (provider.status === 'available') {
+      setTtsProviderStatus({ text: t('ttsStatusAvailable'), isError: false });
+    } else if (provider.status === 'unavailable') {
+      setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
+    } else {
+      setTtsProviderStatus({ text: String(provider.status || ''), isError: false });
+    }
+  }
+
+  async function waitForBackendTtsClient(retries = 60, delayMs = 50) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      if (
+        window.FudokiBackendApi &&
+        typeof window.FudokiBackendApi.fetchTtsProviders === 'function' &&
+        typeof window.FudokiBackendApi.requestRemoteSpeech === 'function'
+      ) {
+        return window.FudokiBackendApi;
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    return null;
+  }
+
+  async function bootstrapTtsProviders() {
+    const backendApi = await waitForBackendTtsClient();
+    if (!backendApi) return;
+
+    try {
+      ttsProvidersMetadata = await window.FudokiBackendApi.fetchTtsProviders();
+      renderTtsProviderOptions();
+
+      const stored = (() => {
+        try { return localStorage.getItem(LS.ttsProvider); } catch (_) { return null; }
+      })();
+      const known = new Set(getKnownProviderIds());
+      const defaultProvider = ttsProvidersMetadata && ttsProvidersMetadata.default_provider ? ttsProvidersMetadata.default_provider : 'system';
+      const initial = stored && known.has(stored) ? stored : (known.has(defaultProvider) ? defaultProvider : 'system');
+      setSelectedTtsProviderId(initial, { persist: true });
+
+      updateSelectedProviderStatus();
+    } catch (e) {
+      // Keep System available even if provider discovery fails.
+      ttsProvidersMetadata = { default_provider: 'system', providers: [{ id: 'system', status: 'available' }] };
+      renderTtsProviderOptions();
+      setSelectedTtsProviderId('system', { persist: false });
+      setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
+    }
+  }
+
+  async function playTextThroughSelectedProvider(text, mode) {
+    const providerId = getSelectedTtsProviderId();
+
+    // Tokens always use system TTS, even when remote is selected.
+    if (mode === 'token' || providerId === 'system') {
+      stopRemotePlayback();
+      speak(text);
+      return;
+    }
+
+    // Only line/full playback should go remote.
+    stopSpeaking();
+    if (!window.FudokiBackendApi || typeof window.FudokiBackendApi.requestRemoteSpeech !== 'function') {
+      if (window.showErrorToast) window.showErrorToast(t('ttsStatusRequestFailed'));
+      setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
+      return;
+    }
+
+    const player = ensureRemoteTtsPlayer();
+    if (!player) {
+      if (window.showErrorToast) window.showErrorToast(t('ttsStatusRequestFailed'));
+      setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
+      return;
+    }
+
+    const provider =
+      ttsProvidersMetadata && Array.isArray(ttsProvidersMetadata.providers)
+        ? ttsProvidersMetadata.providers.find((p) => p && p.id === providerId)
+        : null;
+
+    const payload = { provider: providerId, text: String(text || ''), speed: rate };
+    if (provider && provider.defaults) {
+      if (provider.defaults.voice) payload.voice = provider.defaults.voice;
+      if (provider.defaults.format) payload.format = provider.defaults.format;
+    }
+
+    try {
+      const response = await window.FudokiBackendApi.requestRemoteSpeech(payload);
+      await player.playResponse(response);
+      // Refresh provider status after a successful request.
+      try { await bootstrapTtsProviders(); } catch (_) {}
+    } catch (e) {
+      const msg = e && e.message ? e.message : t('ttsStatusRequestFailed');
+      if (window.showErrorToast) window.showErrorToast(msg);
+      setTtsProviderStatus({ text: t('ttsStatusRequestFailed'), isError: true });
+      try { await bootstrapTtsProviders(); } catch (_) {}
+    }
+  }
+
   // 高亮词汇函数
   function highlightToken(text, targetElement = null, opts = {}) {
     // 清除之前的高亮
@@ -4471,9 +4728,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
       event.stopPropagation();
     }
     // 若正在播放，先停止，再继续播放当前点击的词
-    if (isPlaying) {
-      stopSpeaking();
-    }
+    if (isPlaying || isRemotePlaybackActive()) stopAllPlayback();
     
     // 尝试从最近的 token-pill 的 data-token 中获取tokenData
     let resolvedToken = tokenData;
@@ -4532,7 +4787,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const pillElement = event && event.target && event.target.closest ? event.target.closest('.token-pill') : null;
     const highlightText = resolvedToken && resolvedToken.surface ? resolvedToken.surface : text;
     highlightToken(highlightText, pillElement);
-    speak(textToSpeak);
+    playTextThroughSelectedProvider(textToSpeak, 'token');
   };
 
   // 显示/隐藏词汇详细信息
@@ -4859,8 +5114,8 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
 
   // 播放整行文本
   window.playLine = function(lineIndex) {
-    if (isPlaying) {
-      stopSpeaking();
+    if (isPlaying || isRemotePlaybackActive()) {
+      stopAllPlayback();
       return;
     }
     
@@ -4905,14 +5160,14 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
           return kanjiEl ? kanjiEl.textContent : '';
         }
       }).join('');
-      speak(lineText);
+      playTextThroughSelectedProvider(lineText, 'line');
     }
   };
 
   // 播放全部文本
   function playAllText() {
-    if (isPlaying) {
-      stopSpeaking();
+    if (isPlaying || isRemotePlaybackActive()) {
+      stopAllPlayback();
       return;
     }
     
@@ -4984,7 +5239,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
         
         if (fullText.trim()) {
           console.log('使用content-area中的文本播放（已过滤markdown标记，保留标点和换行）');
-          speak(fullText);
+          playTextThroughSelectedProvider(fullText, 'full');
           return;
         }
       }
@@ -5027,7 +5282,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
         }).join('');
         
         if (readingParts.trim()) {
-          speak(readingParts);
+          playTextThroughSelectedProvider(readingParts, 'full');
           return;
         }
       }
@@ -5037,7 +5292,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const text = textInput.value.trim();
     if (text) {
       console.log('content-area无内容，使用原始输入文本');
-      speak(text);
+      playTextThroughSelectedProvider(text, 'full');
     } else {
       showNotification(t('pleaseInputText'), 'warning');
     }
@@ -6207,6 +6462,14 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
             </select>
           </div>
 
+          <div class="control-group select-group">
+            <label class="control-label" id="${id('ttsProviderLabel')}"><span class="label-text">${t('ttsProviderLabel')}</span></label>
+            <select id="${id('ttsProviderSelect')}">
+              <option value="system">${t('ttsProviderSystem')}</option>
+            </select>
+            <div class="tts-provider-status" id="${id('ttsProviderStatus')}" aria-live="polite"></div>
+          </div>
+
           <div class="control-group full-width">
             <label class="control-label" id="${id('speedLabel')}"><span class="label-text">${t('speedLabel')}</span></label>
             <input type="range" id="${id('speedRange')}" min="0.5" max="2" step="0.1" value="1">
@@ -6661,11 +6924,30 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     }
   }
 
+  function initTtsProviderControls() {
+    const selects = getAllTtsProviderSelectEls();
+    if (!selects.length) return;
+
+    // Avoid duplicate listeners by re-binding through event delegation semantics.
+    selects.forEach((sel) => {
+      sel.addEventListener('change', () => {
+        // Switching providers should not overlap audio.
+        stopAllPlayback();
+        const next = sel.value;
+        setSelectedTtsProviderId(next, { persist: true });
+      });
+    });
+
+    // Sync current selection into any newly injected UI.
+    try { setSelectedTtsProviderId(getSelectedTtsProviderId(), { persist: false }); } catch (_) {}
+  }
+
   // 确保DOM加载完成后初始化所有功能
   function initializeApp() {
     initSharedToolbarContent(); // 首先初始化共享工具栏内容（保留其它处使用）
     mountSettingsModalContent(); // 为设置弹窗注入内容
     initSettingsModal(); // 绑定齿轮按钮与设置弹窗
+    initTtsProviderControls();
     initDisplayControls();
     initToolbarDrag();
     initToolbarResize();
@@ -6819,6 +7101,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     })();
     initQuickSearch();
     // initSidebarAutoCollapse(); // 已禁用自动收缩功能
+    try { bootstrapTtsProviders(); } catch (_) {}
   }
 
   // 防抖已抽离至 static/js/ui-utils.js（window.debounce）

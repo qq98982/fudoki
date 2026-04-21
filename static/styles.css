@@ -5508,3 +5508,22 @@ input[type="text"], textarea { font-size: 14px; }
 .input-section .EasyMDEContainer .cm-em {
   font-style: italic;
 }
+
+/* TTS provider selector status */
+.tts-provider-status {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border);
+  width: fit-content;
+}
+
+.tts-provider-status.is-error {
+  color: #8a1f1f;
+  background: rgba(180, 20, 20, 0.08);
+  border-color: rgba(180, 20, 20, 0.22);
+}
