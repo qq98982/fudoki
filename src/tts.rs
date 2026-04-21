@@ -210,6 +210,7 @@ impl TtsConfig {
                 "tts_bad_request",
                 format!("Unsupported TTS provider: {provider}"),
             );
+            self.set_last_error(err.error.message.clone());
             return Err((StatusCode::BAD_REQUEST, err));
         }
 
