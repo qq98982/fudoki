@@ -39,6 +39,16 @@ pub struct TtsConfig {
 }
 
 impl TtsConfig {
+    fn env_trimmed_nonempty(key: &str) -> Option<String> {
+        let value = std::env::var(key).ok()?;
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+
     pub fn disabled() -> Self {
         Self {
             openai_compatible: None,
@@ -60,9 +70,9 @@ impl TtsConfig {
     }
 
     pub fn from_env() -> Self {
-        let base_url = std::env::var("FUDOKI_TTS_OPENAI_BASE_URL").ok();
-        let api_key = std::env::var("FUDOKI_TTS_OPENAI_API_KEY").ok();
-        let model = std::env::var("FUDOKI_TTS_OPENAI_MODEL").ok();
+        let base_url = Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_BASE_URL");
+        let api_key = Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_API_KEY");
+        let model = Self::env_trimmed_nonempty("FUDOKI_TTS_OPENAI_MODEL");
 
         match (base_url, api_key, model) {
             (Some(base_url), Some(api_key), Some(model)) => {
