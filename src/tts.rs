@@ -1,5 +1,6 @@
-use std::time::Duration;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::http::{header, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,12 @@ pub struct SpeakRequest {
     pub format: Option<String>,
     #[serde(default)]
     pub speed: Option<f32>,
+    #[serde(default)]
+    pub document_id: Option<String>,
+    #[serde(default)]
+    pub document_revision: Option<u64>,
+    #[serde(default)]
+    pub cache_scope_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -76,12 +83,195 @@ pub struct TtsProvidersResponse {
     pub providers: Vec<TtsProviderView>,
 }
 
+const REMOTE_TTS_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
+const REMOTE_TTS_CACHE_MAX_ENTRIES: usize = 64;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct CacheKey {
+    provider: String,
+    document_id: Option<String>,
+    text: String,
+    model: String,
+    voice: String,
+    format: String,
+    speed_hundredths: u16,
+}
+
+#[derive(Clone, Debug)]
+struct CacheEntry {
+    speech: SynthesizedSpeech,
+    expires_at: Instant,
+    last_used_tick: u64,
+}
+
+#[derive(Default)]
+struct TtsCacheState {
+    entries: HashMap<CacheKey, CacheEntry>,
+    document_keys: HashMap<String, HashSet<CacheKey>>,
+    document_revisions: HashMap<String, u64>,
+    cache_scope_version: Option<String>,
+    usage_clock: u64,
+}
+
+impl TtsCacheState {
+    fn next_usage_tick(&mut self) -> u64 {
+        self.usage_clock = self.usage_clock.wrapping_add(1);
+        self.usage_clock
+    }
+
+    fn clear_all(&mut self) {
+        self.entries.clear();
+        self.document_keys.clear();
+        self.document_revisions.clear();
+        self.cache_scope_version = None;
+    }
+
+    fn clear_document(&mut self, document_id: &str) {
+        if let Some(keys) = self.document_keys.remove(document_id) {
+            for key in keys {
+                self.entries.remove(&key);
+            }
+        }
+        self.document_revisions.remove(document_id);
+    }
+
+    fn prune_expired(&mut self) {
+        let now = Instant::now();
+        let expired = self
+            .entries
+            .iter()
+            .filter_map(|(key, entry)| {
+                if entry.expires_at <= now {
+                    Some(key.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for key in expired {
+            self.remove_key(&key);
+        }
+    }
+
+    fn remove_key(&mut self, key: &CacheKey) {
+        let Some(removed) = self.entries.remove(key) else {
+            return;
+        };
+
+        if let Some(document_id) = &key.document_id {
+            let should_remove = if let Some(keys) = self.document_keys.get_mut(document_id) {
+                keys.remove(key);
+                keys.is_empty()
+            } else {
+                false
+            };
+
+            if should_remove {
+                self.document_keys.remove(document_id);
+            }
+        }
+
+        let _ = removed;
+    }
+
+    fn evict_lru(&mut self) {
+        if let Some(key) = self
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_used_tick)
+            .map(|(key, _)| key.clone())
+        {
+            self.remove_key(&key);
+        }
+    }
+
+    fn apply_request_scope(&mut self, request: &SpeakRequest) {
+        self.prune_expired();
+
+        if let Some(next_scope) = request.cache_scope_version.as_deref() {
+            let scope_changed = self
+                .cache_scope_version
+                .as_deref()
+                .is_some_and(|current| current != next_scope);
+            if scope_changed {
+                self.clear_all();
+            }
+            self.cache_scope_version = Some(next_scope.to_string());
+        }
+
+        if let (Some(document_id), Some(document_revision)) =
+            (request.document_id.as_deref(), request.document_revision)
+        {
+            let document_changed = self
+                .document_revisions
+                .get(document_id)
+                .is_some_and(|stored| *stored != document_revision);
+            if document_changed {
+                self.clear_document(document_id);
+            }
+            self.document_revisions
+                .insert(document_id.to_string(), document_revision);
+        }
+    }
+
+    fn get(&mut self, key: &CacheKey) -> Option<SynthesizedSpeech> {
+        self.prune_expired();
+
+        let now = Instant::now();
+        let is_expired = self
+            .entries
+            .get(key)
+            .is_some_and(|entry| entry.expires_at <= now);
+        if is_expired {
+            self.remove_key(key);
+            return None;
+        }
+
+        let tick = self.next_usage_tick();
+        let entry = self.entries.get_mut(key)?;
+        entry.last_used_tick = tick;
+        Some(entry.speech.clone())
+    }
+
+    fn insert(&mut self, key: CacheKey, speech: SynthesizedSpeech) {
+        self.prune_expired();
+
+        if self.entries.contains_key(&key) {
+            self.remove_key(&key);
+        }
+
+        while self.entries.len() >= REMOTE_TTS_CACHE_MAX_ENTRIES {
+            self.evict_lru();
+        }
+
+        let tick = self.next_usage_tick();
+        let document_id = key.document_id.clone();
+        self.entries.insert(
+            key.clone(),
+            CacheEntry {
+                speech,
+                expires_at: Instant::now() + REMOTE_TTS_CACHE_TTL,
+                last_used_tick: tick,
+            },
+        );
+
+        if let Some(document_id) = document_id {
+            self.document_keys
+                .entry(document_id)
+                .or_default()
+                .insert(key);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct TtsConfig {
     client: reqwest::Client,
     openai_compatible: Option<OpenAiCompatibleConfig>,
     default_provider: String,
     last_error: Arc<Mutex<Option<String>>>,
+    cache: Arc<Mutex<TtsCacheState>>,
 }
 
 impl TtsConfig {
@@ -101,6 +291,29 @@ impl TtsConfig {
             .timeout(Duration::from_secs(20))
             .build()
             .expect("build reqwest client")
+    }
+
+    fn speed_cache_key(speed: f32) -> u16 {
+        ((speed * 100.0).round()).clamp(0.0, u16::MAX as f32) as u16
+    }
+
+    fn build_cache_key(
+        provider: &str,
+        request: &SpeakRequest,
+        model: &str,
+        voice: &str,
+        response_format: &str,
+        speed: f32,
+    ) -> CacheKey {
+        CacheKey {
+            provider: provider.to_string(),
+            document_id: request.document_id.clone(),
+            text: request.text.clone(),
+            model: model.to_string(),
+            voice: voice.to_string(),
+            format: response_format.to_string(),
+            speed_hundredths: Self::speed_cache_key(speed),
+        }
     }
 
     fn parse_option_list(key: &str) -> Vec<String> {
@@ -137,6 +350,7 @@ impl TtsConfig {
             openai_compatible: None,
             default_provider: "system".to_string(),
             last_error: Arc::new(Mutex::new(None)),
+            cache: Arc::new(Mutex::new(TtsCacheState::default())),
         }
     }
 
@@ -150,6 +364,7 @@ impl TtsConfig {
             openai_compatible: Some(openai_compatible),
             default_provider: default_provider.unwrap_or(openai_id),
             last_error: Arc::new(Mutex::new(None)),
+            cache: Arc::new(Mutex::new(TtsCacheState::default())),
         }
     }
 
@@ -316,6 +531,15 @@ impl TtsConfig {
             return Err((StatusCode::BAD_REQUEST, err));
         }
 
+        let cache_key = Self::build_cache_key(provider, request, model, voice, response_format, speed);
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.apply_request_scope(request);
+            if let Some(cached) = cache.get(&cache_key) {
+                self.clear_last_error();
+                return Ok(cached);
+            }
+        }
+
         let resp = self
             .client
             .post(url)
@@ -362,10 +586,17 @@ impl TtsConfig {
         })?;
 
         self.clear_last_error();
-        Ok(SynthesizedSpeech {
+        let speech = SynthesizedSpeech {
             content_type,
             bytes: bytes.to_vec(),
-        })
+        };
+
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.apply_request_scope(request);
+            cache.insert(cache_key, speech.clone());
+        }
+
+        Ok(speech)
     }
 
     #[cfg(debug_assertions)]

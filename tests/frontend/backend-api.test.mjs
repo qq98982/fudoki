@@ -47,11 +47,20 @@ test("index.html skips Firebase auth redirect on localhost", () => {
   assert.ok(indexHtmlSource.includes("skipping Firebase auth redirect"));
 });
 
-test("main-js schedules debounced analysis on input changes", () => {
-  assert.ok(mainJsSource.includes("let inputAnalyzeTimeout = null;"));
-  assert.ok(mainJsSource.includes("textInput.addEventListener('input'"));
-  assert.ok(mainJsSource.includes("clearTimeout(inputAnalyzeTimeout);"));
-  assert.ok(mainJsSource.includes("inputAnalyzeTimeout = setTimeout(() => {"));
+test("main-js only auto-analyzes when structure signature changes", () => {
+  assert.ok(mainJsSource.includes("let lastInputStructureSignature = computeStructureSignature(textInput ? textInput.value : '');"));
+  assert.ok(mainJsSource.includes("let lastAnalyzedStructureSignature = lastInputStructureSignature;"));
+  assert.ok(mainJsSource.includes("const currentSig = computeStructureSignature(textInput.value);"));
+  assert.ok(mainJsSource.includes("if (currentSig === lastInputStructureSignature) {"));
+  assert.ok(mainJsSource.includes("lastAnalyzedStructureSignature = currentSig;"));
+  assert.ok(!mainJsSource.includes("let inputAnalyzeTimeout = null;"));
+  assert.ok(!mainJsSource.includes("inputAnalyzeTimeout = setTimeout(() => {"));
+});
+
+test("main-js includes remote tts cache metadata in speak payloads", () => {
+  assert.ok(mainJsSource.includes("payload.document_id"));
+  assert.ok(mainJsSource.includes("payload.document_revision"));
+  assert.ok(mainJsSource.includes("payload.cache_scope_version"));
 });
 
 test("main-js bootstraps analysis only after backend readiness", () => {

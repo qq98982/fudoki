@@ -4074,6 +4074,41 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     return next;
   }
 
+  function getRemoteTtsResponseFormat() {
+    const provider = getRemoteProviderView();
+    return provider && provider.defaults && provider.defaults.format ? provider.defaults.format : '';
+  }
+
+  function getRemoteTtsCacheScopeVersion() {
+    return [
+      getSelectedTtsProviderId(),
+      getSelectedRemoteModelId(),
+      getSelectedRemoteVoiceId(),
+      getRemoteTtsResponseFormat(),
+    ].join('|');
+  }
+
+  function computeTextRevision(text) {
+    const value = String(text || '');
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function getActiveDocumentCacheMetadata() {
+    const manager = window.documentManager;
+    if (!manager || typeof manager.getActiveId !== 'function') return null;
+    const documentId = manager.getActiveId();
+    if (!documentId) return null;
+    return {
+      documentId,
+      documentRevision: computeTextRevision(textInput ? textInput.value : ''),
+    };
+  }
+
   function setTtsProviderStatus({ text, isError } = {}) {
     const els = getAllTtsProviderStatusEls();
     els.forEach((el) => {
@@ -4366,6 +4401,12 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     if (selectedRemoteVoice) payload.voice = selectedRemoteVoice;
     if (provider && provider.defaults && provider.defaults.format) payload.format = provider.defaults.format;
     payload.speed = rate;
+    const cacheMetadata = getActiveDocumentCacheMetadata();
+    if (cacheMetadata) {
+      payload.document_id = cacheMetadata.documentId;
+      payload.document_revision = cacheMetadata.documentRevision;
+    }
+    payload.cache_scope_version = getRemoteTtsCacheScopeVersion();
 
     try {
       const response = await window.FudokiBackendApi.requestRemoteSpeech(payload);
@@ -4583,6 +4624,9 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const raw = textInput.value.trim();
 
     if (!raw) {
+      const currentSig = computeStructureSignature('');
+      lastInputStructureSignature = currentSig;
+      lastAnalyzedStructureSignature = currentSig;
       showEmptyState();
       return;
     }
@@ -4592,6 +4636,9 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     try {
       const result = await window.FudokiBackendApi.analyzeTextRequest(filterParentheses(raw));
       displayResults(result);
+      const currentSig = computeStructureSignature(textInput.value);
+      lastInputStructureSignature = currentSig;
+      lastAnalyzedStructureSignature = currentSig;
     } catch (error) {
       console.error('分析错误:', error);
       showErrorState(error.message);
@@ -5609,48 +5656,46 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     return `${lines}|${sentences}`;
   }
 
-  let lastStructureSignature = computeStructureSignature(textInput ? textInput.value : '');
-  let inputAnalyzeTimeout = null;
+  let lastInputStructureSignature = computeStructureSignature(textInput ? textInput.value : '');
+  let lastAnalyzedStructureSignature = lastInputStructureSignature;
   if (textInput) {
     textInput.addEventListener('focus', () => {
-      lastStructureSignature = computeStructureSignature(textInput.value);
+      lastInputStructureSignature = computeStructureSignature(textInput.value);
     });
-    textInput.addEventListener('input', () => {
-      clearTimeout(inputAnalyzeTimeout);
-
+    textInput.addEventListener('input', async () => {
+      const currentSig = computeStructureSignature(textInput.value);
       if (!textInput.value.trim()) {
-        lastStructureSignature = computeStructureSignature('');
+        lastInputStructureSignature = currentSig;
+        lastAnalyzedStructureSignature = currentSig;
         showEmptyState();
         return;
       }
 
-      inputAnalyzeTimeout = setTimeout(() => {
-        const currentSig = computeStructureSignature(textInput.value);
-        analyzeText();
-        lastStructureSignature = currentSig;
-        inputAnalyzeTimeout = null;
-      }, 250);
+      if (currentSig === lastInputStructureSignature) {
+        return;
+      }
+
+      lastInputStructureSignature = currentSig;
+      await analyzeText();
     });
-    textInput.addEventListener('blur', () => {
-      clearTimeout(inputAnalyzeTimeout);
-      inputAnalyzeTimeout = null;
+    textInput.addEventListener('blur', async () => {
       const currentSig = computeStructureSignature(textInput.value);
       
       // 先检查是否需要删除空文档
       if (!textInput.value.trim()) {
         // 内容为空时，删除当前文档
-        docManager.deleteEmptyDocument();
+        lastInputStructureSignature = currentSig;
+        lastAnalyzedStructureSignature = currentSig;
+        documentManager.deleteEmptyDocument();
         return; // 空文档无需分析
       }
       
-      // 有内容时，检查是否需要分析
-      if (currentSig !== lastStructureSignature) {
-        analyzeText();
-      } else if (textInput.value.trim()) {
-        // 即使结构没有变化，如果有文本内容也要重新分析
-        analyzeText();
+      if (currentSig === lastAnalyzedStructureSignature) {
+        lastInputStructureSignature = currentSig;
+        return;
       }
-      lastStructureSignature = currentSig;
+
+      await analyzeText();
     });
   }
 

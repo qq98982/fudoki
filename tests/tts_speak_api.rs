@@ -8,6 +8,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tower::ServiceExt;
 
 use fudoki_backend::tts::{OpenAiCompatibleConfig, TtsConfig};
@@ -290,4 +291,175 @@ async fn speak_endpoint_rejects_remote_voice_not_in_allowed_options() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["error"]["code"], "tts_bad_request");
+}
+
+#[tokio::test]
+async fn speak_endpoint_reuses_cached_audio_for_same_document_revision() {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let request_count_clone = request_count.clone();
+    let upstream_url = spawn_fake_upstream(
+        Router::new().route(
+            "/v1/audio/speech",
+            post(move || {
+                let request_count_clone = request_count_clone.clone();
+                async move {
+                    request_count_clone.fetch_add(1, Ordering::SeqCst);
+                    ([(header::CONTENT_TYPE, "audio/mpeg")], vec![4_u8, 2_u8]).into_response()
+                }
+            }),
+        ),
+    )
+    .await;
+
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: upstream_url,
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    ));
+
+    let request_body = r#"{"provider":"openai-compatible","text":"こんにちは","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+
+    let first = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let second = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(request_count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn speak_endpoint_evicts_only_changed_document_revision() {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let request_count_clone = request_count.clone();
+    let upstream_url = spawn_fake_upstream(
+        Router::new().route(
+            "/v1/audio/speech",
+            post(move || {
+                let request_count_clone = request_count_clone.clone();
+                async move {
+                    request_count_clone.fetch_add(1, Ordering::SeqCst);
+                    ([(header::CONTENT_TYPE, "audio/mpeg")], vec![7_u8, 1_u8]).into_response()
+                }
+            }),
+        ),
+    )
+    .await;
+
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: upstream_url,
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    ));
+
+    let doc1_rev1 = r#"{"provider":"openai-compatible","text":"こんにちは","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+    let doc2_rev1 = r#"{"provider":"openai-compatible","text":"さようなら","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-2","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+    let doc1_rev2 = r#"{"provider":"openai-compatible","text":"こんにちは、更新版","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":2,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+
+    for body in [doc1_rev1, doc2_rev1, doc1_rev2, doc2_rev1] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/tts/speak")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    assert_eq!(request_count.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn speak_endpoint_clears_entire_cache_when_cache_scope_changes() {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let request_count_clone = request_count.clone();
+    let upstream_url = spawn_fake_upstream(
+        Router::new().route(
+            "/v1/audio/speech",
+            post(move || {
+                let request_count_clone = request_count_clone.clone();
+                async move {
+                    request_count_clone.fetch_add(1, Ordering::SeqCst);
+                    ([(header::CONTENT_TYPE, "audio/mpeg")], vec![8_u8, 5_u8]).into_response()
+                }
+            }),
+        ),
+    )
+    .await;
+
+    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: upstream_url,
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string(), "gpt-audio-1.5".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string(), "marin".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    ));
+
+    let scope_a_doc1 = r#"{"provider":"openai-compatible","text":"こんにちは","model":"gpt-4o-mini-tts","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+    let scope_a_doc2 = r#"{"provider":"openai-compatible","text":"さようなら","model":"gpt-4o-mini-tts","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-2","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+    let scope_b_doc1 = r#"{"provider":"openai-compatible","text":"こんにちは","model":"gpt-audio-1.5","voice":"marin","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-audio-1.5|marin|mp3"}"#;
+    let scope_b_doc2 = r#"{"provider":"openai-compatible","text":"さようなら","model":"gpt-audio-1.5","voice":"marin","format":"mp3","speed":1.0,"document_id":"doc-2","document_revision":1,"cache_scope_version":"openai-compatible|gpt-audio-1.5|marin|mp3"}"#;
+
+    for body in [scope_a_doc1, scope_a_doc2, scope_b_doc1, scope_b_doc2] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/tts/speak")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    assert_eq!(request_count.load(Ordering::SeqCst), 4);
 }
