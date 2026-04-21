@@ -1,31 +1,32 @@
-# Fudoki Sudachi Backend Design
+# Fudoki Rust Sudachi Backend Design
 
 Date: 2026-04-21
 
 ## Summary
 
-Fudoki will move Japanese analysis from an in-browser tokenizer to a local backend service. The backend will serve the existing frontend static assets and expose analysis and dictionary APIs. The primary analysis engine will be `SudachiPy` with `sudachidict_full`. This change is intended to improve tokenization quality, English and loanword handling, dictionary lookup performance, and runtime reliability.
+Fudoki will move Japanese analysis from an in-browser tokenizer to a local Rust backend service. The backend will serve the existing frontend static assets and expose analysis and dictionary APIs. The primary analysis engine will be `sudachi.rs` with a local Sudachi dictionary on disk. This change is intended to improve tokenization quality, English and loanword handling, runtime reliability, and long-term local-app maintainability.
 
 ## Context
 
 The current application is a static frontend that performs tokenization and reading generation in the browser with `kuromoji` and `kuroshiro`. This causes several user-visible issues:
 
-- Ordinary English words are misclassified as abbreviations and are pronounced letter-by-letter.
+- Ordinary English words are misclassified as abbreviations and pronounced letter-by-letter.
 - Tokenization quality is limited for loanwords, product names, and modern vocabulary.
 - Dictionary lookup requires loading large client-side data and scanning it linearly.
 - Initialization failure silently degrades to character-level fallback tokenization.
-- Analysis is mostly button-driven or blur-driven instead of feeling local and immediate.
+- Analysis feels button-driven or blur-driven instead of like a local app.
 
-The user is comfortable running a local service before opening the frontend, so introducing a backend is acceptable.
+The user is comfortable starting a local service before opening the frontend, and prefers the implementation to be Rust-based rather than Python-based.
 
 ## Goals
 
-- Improve segmentation quality by replacing browser tokenization with `SudachiPy + sudachidict_full`.
+- Improve segmentation quality by replacing browser tokenization with `sudachi.rs`.
 - Fix English token handling so ordinary English words are not treated as abbreviations.
 - Preserve correct behavior for real abbreviations such as `AI`, `API`, and `CPU`.
-- Keep the current frontend UI and user workflow largely intact.
+- Keep the current frontend UI and workflow largely intact.
 - Make dictionary lookup local and fast enough for interactive token-card usage.
 - Remove silent quality degradation when the analysis engine fails to initialize.
+- Implement the backend as a Rust local service.
 
 ## Non-Goals
 
@@ -33,18 +34,19 @@ The user is comfortable running a local service before opening the frontend, so 
 - Shipping a cloud-hosted service.
 - Supporting arbitrary browser-only offline execution in this phase.
 - Solving perfect English-to-katakana conversion for unknown words.
+- Converting the app into a desktop GUI shell in this phase.
 
 ## Chosen Approach
 
-The system will become a local web application with one backend process:
+The system will become a local web application with one Rust backend process:
 
-- `FastAPI` serves `index.html` and `/static/*`.
-- `FastAPI` also exposes `/api/*` endpoints for analysis and dictionary lookup.
-- `SudachiPy` with `sudachidict_full` becomes the primary tokenizer.
+- `axum` serves `index.html` and `/static/*`.
+- `axum` also exposes `/api/*` endpoints for analysis and dictionary lookup.
+- `sudachi.rs` becomes the primary tokenizer.
 - Frontend analysis logic is switched from local `JapaneseSegmenter` calls to HTTP API calls.
 - Existing browser TTS, document management, settings, and reading mode remain in the frontend.
 
-This approach preserves the UI while moving the quality-critical language logic to a better local runtime.
+This keeps the current UI but moves the quality-critical language logic into a local Rust runtime.
 
 ## Alternatives Considered
 
@@ -52,35 +54,39 @@ This approach preserves the UI while moving the quality-critical language logic 
 
 This would reduce some lookup issues but would not fix the main source of bad English and loanword analysis. Tokenization quality would still be limited by the browser-side stack.
 
-### Option B: Local backend with Sudachi
+### Option B: Local Python backend with SudachiPy
 
-This is the chosen option. It improves the core analysis engine, simplifies future extensions, and keeps the user-visible UI stable.
+This would be the fastest path, but it is no longer the selected direction because the user explicitly prefers the Rust implementation.
 
-### Option C: Full rewrite into a different app stack
+### Option C: Local Rust backend with `axum + sudachi.rs`
 
-This would create avoidable migration risk and provide little immediate value compared with replacing the analysis layer.
+This is the chosen option. It improves the core analysis engine, aligns with the user's implementation preference, and fits a local-tool architecture better than the current browser tokenizer.
 
 ## Architecture
 
 ### Backend
 
-Create a new `backend/` package with:
+Create a Rust crate with focused modules:
 
-- `backend/app.py`
-  - FastAPI app creation
-  - static file mounting
-  - API route registration
-- `backend/analyzer.py`
+- `src/main.rs`
+  - process startup
+  - configuration loading
+  - server bootstrap
+- `src/app.rs`
+  - router construction
+  - shared state wiring
+- `src/models.rs`
+  - request and response structs
+  - serialization contracts
+- `src/analyzer.rs`
   - Sudachi tokenizer wrapper
   - line-based analysis entrypoint
   - reading and POS normalization
-- `backend/english.py`
+- `src/english.rs`
   - English token classifier and correction pipeline
-- `backend/dictionary.py`
+- `src/dictionary.rs`
   - local dictionary loading
   - query and lookup helpers
-- `backend/models.py`
-  - request and response schemas
 
 ### Frontend
 
@@ -89,7 +95,27 @@ Keep the current frontend files, but change the data source:
 - `static/main-js.js`
   - `analyzeText()` will call `POST /api/analyze`
   - token-card translation loading will call `GET /api/dictionary`
-- Existing rendering functions continue to consume token arrays with minimal structural change.
+- `static/js/tts.js`
+  - token playback will prefer backend-provided `tts_text`
+- existing rendering functions continue to consume token arrays with minimal structural change
+
+## Dictionary Runtime Strategy
+
+### Sudachi Dictionary
+
+The first Rust implementation will use a local Sudachi dictionary file on disk rather than trying to bake the dictionary into the binary.
+
+Rationale:
+
+- it keeps the first migration simpler and more reliable
+- it avoids a custom build pipeline just to embed dictionary assets
+- the current `sudachi.rs` project documentation still treats dictionary baking as not implemented
+
+This means the first release target is “single local service plus local dictionary files”, not “single self-contained binary”.
+
+### Lookup Dictionary
+
+JMdict-derived local data remains the main source for token-card meaning lookup.
 
 ## Data Flow
 
@@ -111,7 +137,7 @@ Keep the current frontend files, but change the data source:
 
 ## English Token Handling
 
-This is the main behavior change and will use an explicit precedence order.
+This is the main behavior change and uses an explicit precedence order.
 
 ### Guiding Principle
 
@@ -137,10 +163,10 @@ When the system does not have high confidence, it must avoid inventing a Japanes
 
 Treat as abbreviation only when the token is a high-confidence abbreviation, such as:
 
-- all uppercase alphabetic token like `AI`, `CPU`, `API`
-- common mixed tokens with well-known uppercase semantics if explicitly whitelisted
+- all-uppercase alphabetic token like `AI`, `CPU`, `API`
+- explicitly whitelisted mixed-case abbreviations if needed later
 
-Abbreviations keep letter-name pronunciation behavior.
+Abbreviations keep Japanese letter-name pronunciation behavior.
 
 ### Built-in Override Rule
 
@@ -165,8 +191,8 @@ Unknown English terms must not rely on the display-oriented `reading` field for 
 
 - `reading` may be empty when the system intentionally avoids inventing a Japanese reading.
 - `tts_text` must be returned for every token.
-- For unknown English terms, `tts_text` must default to the original token text.
-- For abbreviations, overrides, and dictionary-corrected terms, `tts_text` should normally match the resolved pronunciation text.
+- for unknown English terms, `tts_text` must default to the original token text
+- for abbreviations, overrides, and dictionary-corrected terms, `tts_text` should normally match the resolved pronunciation text
 
 This keeps display behavior and speech behavior separate and avoids regressions where the UI looks correct but TTS becomes undefined or inconsistent.
 
@@ -174,15 +200,11 @@ This keeps display behavior and speech behavior separate and avoids regressions 
 
 ### Primary Analysis Dictionary
 
-- `sudachidict_full`
-
-This is the primary source for token boundaries and base linguistic analysis.
+- local Sudachi dictionary files compatible with `sudachi.rs`
 
 ### Primary Lookup Dictionary
 
 - JMdict-derived local data
-
-This remains the main source for token-card meaning lookup.
 
 ### English Correction Data
 
@@ -192,7 +214,7 @@ The first implementation should support an offline local correction source that 
 - official downloadable dictionary sources such as EDRDG JMdict
 - supplementary Japanese dictionary data suitable for English-to-Japanese correction
 
-The runtime system should not depend on parsing `MDX` directly in the browser. If an `MDX` file is used, it must be converted offline into a project-local queryable format first.
+The runtime system should not depend on parsing `MDX` directly in the frontend. If an `MDX` file is used, it must be converted offline into a project-local queryable format first.
 
 ## API Contract
 
@@ -229,6 +251,7 @@ Response:
         "surface": "React",
         "lemma": "React",
         "reading": "リアクト",
+        "tts_text": "リアクト",
         "pos": ["名詞"],
         "source": "override",
         "confidence": 1.0
@@ -260,14 +283,16 @@ Token field semantics:
 
 ### `GET /api/dictionary?term=...`
 
-Response fields should support the existing token-card UI:
+Response fields must support the current token-card UI:
 
 - `word`
-- normalized query term
+- `query`
 - `kanji`
 - `kana`
 - `senses`
-- optional metadata about lookup source
+- `hasMultipleMeanings`
+- `totalResults`
+- `lookupSource`
 
 Minimum response shape:
 
@@ -332,7 +357,7 @@ Required startup behavior:
 4. Only trigger automatic initial analysis after `/api/health` reports ready.
 5. If readiness is not reached within the retry window, keep the page usable and allow manual retry.
 
-This explicitly prevents regressions where existing auto-analysis runs before the local backend is ready.
+This prevents regressions where existing auto-analysis runs before the local backend is ready.
 
 ### Transitional Compatibility
 
@@ -342,29 +367,29 @@ The old browser tokenization libraries may remain temporarily in the repo during
 
 - Analysis should feel local and immediate on typical note-sized input.
 - Dictionary lookup should be fast enough for token-card interaction without loading the full dataset into browser memory.
-- Because the app runs locally, larger local dictionaries are acceptable if they improve analysis quality.
+- The Rust service should remain lightweight enough for normal local startup without a complex dependency chain.
 
 ## Migration Plan
 
 ### Phase 1
 
-- Add local backend serving static assets and health endpoint.
-- Wire frontend to backend connectivity checks.
+- add Rust backend serving static assets and health endpoint
+- wire frontend to backend connectivity checks
 
 ### Phase 2
 
-- Add Sudachi-based `/api/analyze`.
-- Port current token normalization behavior that still matters, such as dates and display shaping, only where still necessary.
+- add Sudachi-based `/api/analyze`
+- port only the token normalization behavior that still matters for the UI contract
 
 ### Phase 3
 
-- Add English token classifier and correction pipeline.
-- Add backend dictionary lookup endpoint.
+- add English token classifier and correction pipeline
+- add backend dictionary lookup endpoint
 
 ### Phase 4
 
-- Remove silent browser fallback behavior.
-- Remove or reduce unused browser-side dictionary and tokenizer dependencies.
+- remove silent browser fallback behavior
+- remove or reduce unused browser-side dictionary and tokenizer dependencies
 
 ## Testing Strategy
 
@@ -382,6 +407,7 @@ Cover:
 
 Cover:
 
+- `GET /api/health`
 - `POST /api/analyze`
 - `GET /api/dictionary`
 - startup flow when `/api/health` is temporarily not ready
@@ -424,6 +450,14 @@ Mitigation:
 - only use correction when confidence is high
 - otherwise preserve original English
 
+### Risk: Rust asset and dictionary loading complicates startup
+
+Mitigation:
+
+- keep the first version simple: serve static files from the repo and load dictionary files from disk
+- avoid binary embedding in phase 1
+- expose explicit health status
+
 ### Risk: Frontend still contains duplicated old logic
 
 Mitigation:
@@ -439,3 +473,4 @@ Mitigation:
 - Loanword and modern vocabulary segmentation is noticeably better than the current browser tokenizer.
 - Clicking a token card returns dictionary data without loading large client-side dictionary blobs first.
 - Backend startup failures are visible and actionable.
+- The system runs as a local Rust service plus local dictionary files.
