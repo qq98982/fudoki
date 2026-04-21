@@ -3,3 +3,4 @@ pub mod app;
 pub mod dictionary;
 pub mod english;
 pub mod models;
+pub mod tts;

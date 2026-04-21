@@ -13,11 +13,13 @@ use tower_http::services::ServeDir;
 use crate::analyzer::Analyzer;
 use crate::dictionary::{DictionaryPayload, DictionaryService};
 use crate::models::{AnalyzeRequest, AnalyzeResponse};
+use crate::tts::{TtsConfig, TtsProvidersResponse};
 
 #[derive(Clone)]
 pub struct AppState {
     pub analyzer: Arc<Analyzer>,
     pub dictionary: Arc<DictionaryService>,
+    pub tts: TtsConfig,
 }
 
 #[derive(Serialize)]
@@ -68,10 +70,15 @@ async fn dictionary_lookup(
         .ok_or(StatusCode::NOT_FOUND)
 }
 
-pub fn build_router() -> Router {
+async fn tts_providers(State(state): State<AppState>) -> Json<TtsProvidersResponse> {
+    Json(state.tts.providers_response())
+}
+
+pub fn build_router_with_tts_config(tts: TtsConfig) -> Router {
     let state = AppState {
         analyzer: Arc::new(Analyzer::new()),
         dictionary: Arc::new(DictionaryService::new()),
+        tts,
     };
 
     Router::new()
@@ -80,6 +87,11 @@ pub fn build_router() -> Router {
         .route("/api/health", get(health))
         .route("/api/analyze", post(analyze))
         .route("/api/dictionary", get(dictionary_lookup))
+        .route("/api/tts/providers", get(tts_providers))
         .nest_service("/static", ServeDir::new("static"))
         .with_state(state)
+}
+
+pub fn build_router() -> Router {
+    build_router_with_tts_config(TtsConfig::from_env())
 }

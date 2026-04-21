@@ -11,6 +11,8 @@ serde_json = "1.0.145"
 tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6.8", features = ["fs"] }
 sudachi = { git = "https://github.com/WorksApplications/sudachi.rs.git", package = "sudachi" }
+dotenvy = "0.15.7"
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 http-body-util = "0.1.3"
