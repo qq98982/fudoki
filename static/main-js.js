@@ -3583,7 +3583,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     // 清理文本
     const stripped = String(text || '')
       .replace(/（[^）]*）|\([^)]*\)/g, '')
-      .replace(/[\s\u00A0]+/g, ' ')
+      .replace(/[^\S\n\r\u00A0]+/g, ' ')
       .trim();
     if (!stripped) return;
     
@@ -3619,6 +3619,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const ellipsisPause = 1000;  // 省略号 - 更长停顿
     const linePause = 280;       // 普通换行 - 轻中停顿
     const titleLinePause = 950;  // 标题换行 - 明显停顿
+    const paragraphPause = 1300; // 空行分段 - 段落停顿
     
     let buffer = '';
 
@@ -3646,9 +3647,19 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
       
       if (ch === '\n') {
         const currentLine = buffer.trim();
-        const remaining = normalized.slice(i + 1).trim();
-        const pause = (remaining && isTitleLikeLine(currentLine)) ? titleLinePause : linePause;
+        let newlineCount = 1;
+        while (normalized[i + newlineCount] === '\n') {
+          newlineCount++;
+        }
+        const remaining = normalized.slice(i + newlineCount).trim();
+        let pause = linePause;
+        if (newlineCount > 1) {
+          pause = paragraphPause;
+        } else if (remaining && isTitleLikeLine(currentLine)) {
+          pause = titleLinePause;
+        }
         pushSegment(pause);
+        i += newlineCount - 1;
         continue;
       }
       

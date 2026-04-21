@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const mainJsSource = readFileSync(resolve(__dirname, "../../static/main-js.js"), "utf8");
+const ttsJsSource = readFileSync(resolve(__dirname, "../../static/js/tts.js"), "utf8");
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}(`;
@@ -48,8 +49,21 @@ test("default content no longer includes the English tail sentence", () => {
 test("title-like newline creates a stronger pause than ordinary line breaks", () => {
   const titleSegments = runSplit("外来語の話\nこれは本文の最初の文です");
   const bodySegments = runSplit("これは本文の途中にある少し長めの行であり\n次の行に続いています");
+  const paragraphSegments = runSplit("見出し\n\nこれは次の段落です");
 
   assert.equal(titleSegments[0].text, "外来語の話");
   assert.equal(bodySegments[0].text, "これは本文の途中にある少し長めの行であり");
+  assert.equal(paragraphSegments[0].text, "見出し");
   assert.ok(titleSegments[0].pause > bodySegments[0].pause);
+  assert.ok(paragraphSegments[0].pause > titleSegments[0].pause);
+});
+
+test("speech preprocessing preserves line breaks before segmentation", () => {
+  const mainSpeakSource = extractFunctionSource(mainJsSource, "speakWithPauses");
+  const ttsSpeakSource = extractFunctionSource(ttsJsSource, "speakWithPauses");
+
+  assert.doesNotMatch(mainSpeakSource, /\.replace\(\/\[\\s\\u00A0\]\+\/g, ' '\)/);
+  assert.ok(mainSpeakSource.includes(".replace(/[^\\S\\n\\r\\u00A0]+/g, ' ')"));
+  assert.doesNotMatch(ttsSpeakSource, /\.replace\(\/\[\\s\\u00A0\]\+\/g, ' '\)/);
+  assert.ok(ttsSpeakSource.includes(".replace(/[^\\S\\n\\r\\u00A0]+/g, ' ')"));
 });

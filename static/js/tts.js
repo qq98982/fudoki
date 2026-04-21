@@ -296,7 +296,7 @@
   window.speakWithPauses = function speakWithPauses(text, rateOverride) {
     if (!('speechSynthesis' in window)) return;
     if (window.isPlaying) { window.stopSpeaking(); return; }
-    const stripped = String(text || '').replace(/（[^）]*）|\([^)]*\)/g, '').replace(/[\s\u00A0]+/g, ' ').trim();
+    const stripped = String(text || '').replace(/（[^）]*）|\([^)]*\)/g, '').replace(/[^\S\n\r\u00A0]+/g, ' ').trim();
     if (!stripped) return;
     const segments = (window.splitTextByPunctuation ? window.splitTextByPunctuation(stripped) : [{ text: stripped, pause: 0 }]);
     window.currentPlayingText = stripped;
@@ -579,4 +579,3 @@
     if (text) { window.speak(text); } else if (typeof window.showNotification === 'function') { window.showNotification(t('pleaseInputText') || '请先输入文本', 'warning'); }
   };
 })();
-
