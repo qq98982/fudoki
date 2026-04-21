@@ -5084,11 +5084,30 @@ Try Fudoki and enjoy Japanese language analysis!`;
   }
 
   let lastStructureSignature = computeStructureSignature(textInput ? textInput.value : '');
+  let inputAnalyzeTimeout = null;
   if (textInput) {
     textInput.addEventListener('focus', () => {
       lastStructureSignature = computeStructureSignature(textInput.value);
     });
+    textInput.addEventListener('input', () => {
+      clearTimeout(inputAnalyzeTimeout);
+
+      if (!textInput.value.trim()) {
+        lastStructureSignature = computeStructureSignature('');
+        showEmptyState();
+        return;
+      }
+
+      inputAnalyzeTimeout = setTimeout(() => {
+        const currentSig = computeStructureSignature(textInput.value);
+        analyzeText();
+        lastStructureSignature = currentSig;
+        inputAnalyzeTimeout = null;
+      }, 250);
+    });
     textInput.addEventListener('blur', () => {
+      clearTimeout(inputAnalyzeTimeout);
+      inputAnalyzeTimeout = null;
       const currentSig = computeStructureSignature(textInput.value);
       
       // 先检查是否需要删除空文档

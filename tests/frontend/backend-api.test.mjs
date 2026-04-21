@@ -40,6 +40,13 @@ test("main-js analyzes and looks up via backend helper APIs", () => {
   assert.ok(mainJsSource.includes("window.FudokiBackendApi.lookupDictionaryRequest"));
 });
 
+test("main-js schedules debounced analysis on input changes", () => {
+  assert.ok(mainJsSource.includes("let inputAnalyzeTimeout = null;"));
+  assert.ok(mainJsSource.includes("textInput.addEventListener('input'"));
+  assert.ok(mainJsSource.includes("clearTimeout(inputAnalyzeTimeout);"));
+  assert.ok(mainJsSource.includes("inputAnalyzeTimeout = setTimeout(() => {"));
+});
+
 test("main-js bootstraps analysis only after backend readiness", () => {
   assert.ok(mainJsSource.includes("async function waitForBackendApiClient("));
   assert.ok(mainJsSource.includes("async function bootstrapAnalysis()"));
