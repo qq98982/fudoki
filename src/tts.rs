@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OpenAiCompatibleConfig {
     pub base_url: String,
     pub api_key: String,
@@ -31,7 +31,7 @@ pub struct TtsProvidersResponse {
     pub providers: Vec<TtsProviderView>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TtsConfig {
     openai_compatible: Option<OpenAiCompatibleConfig>,
     default_provider: String,
@@ -94,16 +94,17 @@ impl TtsConfig {
         });
 
         if let Some(cfg) = &self.openai_compatible {
-            let status = if self
-                .last_error
-                .lock()
-                .ok()
-                .and_then(|g| g.as_ref().map(|_| ()))
-                .is_some()
-            {
-                "unavailable"
-            } else {
-                "available"
+            // Fail closed: if we can't read the error state (e.g. poisoned mutex), do not
+            // report this provider as available.
+            let status = match self.last_error.lock() {
+                Ok(guard) => {
+                    if guard.is_some() {
+                        "unavailable"
+                    } else {
+                        "available"
+                    }
+                }
+                Err(_) => "unavailable",
             };
 
             providers.push(TtsProviderView {
@@ -126,5 +127,15 @@ impl TtsConfig {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(error.into());
         }
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn __poison_last_error_mutex_for_test(&self) {
+        let last_error = self.last_error.clone();
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = last_error.lock().expect("lock last_error");
+            panic!("intentional panic while holding last_error lock (test helper)");
+        });
     }
 }

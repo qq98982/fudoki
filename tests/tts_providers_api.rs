@@ -210,3 +210,42 @@ async fn from_env_requires_model_to_enable_online_provider() {
     assert_eq!(providers[0]["id"], "system");
     assert_eq!(providers[0]["status"], "available");
 }
+
+#[tokio::test]
+#[cfg(debug_assertions)]
+async fn providers_endpoint_fails_closed_when_last_error_mutex_is_poisoned() {
+    let tts = TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: "https://example.invalid/v1".to_string(),
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            default_voice: "alloy".to_string(),
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    );
+
+    tts.__poison_last_error_mutex_for_test();
+
+    let app = fudoki_backend::app::build_router_with_tts_config(tts);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tts/providers")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let providers = json["providers"].as_array().unwrap();
+
+    assert_eq!(providers.len(), 2);
+    assert_eq!(providers[1]["id"], "openai-compatible");
+    assert_eq!(providers[1]["status"], "unavailable");
+}
