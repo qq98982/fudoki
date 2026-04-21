@@ -37,6 +37,11 @@ test("provider state is stored in localStorage and defaults from backend metadat
   assert.ok(mainJsSource.includes("provider.options.voices"));
 });
 
+test("system mode shows a '-' placeholder for remote model and voice", () => {
+  assert.ok(mainJsSource.includes("SYSTEM_TTS_PLACEHOLDER_VALUE"));
+  assert.ok(mainJsSource.includes("'-'"));
+});
+
 test("system provider option is always available regardless of backend metadata shape", () => {
   assert.ok(mainJsSource.includes("SYSTEM_TTS_PROVIDER_ID"));
   assert.ok(mainJsSource.includes("Always include system provider"));

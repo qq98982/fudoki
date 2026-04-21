@@ -2256,6 +2256,7 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
   let progressTimer = null; // 顶部进度条的计时器（TTS边界事件不可用时的回退）
   // TTS provider selection / remote playback
   const SYSTEM_TTS_PROVIDER_ID = 'system';
+  const SYSTEM_TTS_PLACEHOLDER_VALUE = '-';
   let ttsProvidersMetadata = null;
   let remoteTtsPlayer = null;
   let remoteTtsPlayerState = 'idle';
@@ -4158,27 +4159,44 @@ UIはシンプルで、ダークモード（Dark Mode）やカスタムスピー
     const voices = getAvailableRemoteVoices();
     const selectedModel = getSelectedRemoteModelId();
     const selectedVoice = getSelectedRemoteVoiceId();
+    const isRemote = getSelectedTtsProviderId() === 'openai-compatible';
 
     modelSelects.forEach((sel) => {
       sel.innerHTML = '';
-      models.forEach((modelId) => {
+      if (!isRemote) {
         const opt = document.createElement('option');
-        opt.value = modelId;
-        opt.textContent = modelId;
+        opt.value = SYSTEM_TTS_PLACEHOLDER_VALUE;
+        opt.textContent = SYSTEM_TTS_PLACEHOLDER_VALUE;
         sel.appendChild(opt);
-      });
-      if (models.includes(selectedModel)) sel.value = selectedModel;
+        sel.value = SYSTEM_TTS_PLACEHOLDER_VALUE;
+      } else {
+        models.forEach((modelId) => {
+          const opt = document.createElement('option');
+          opt.value = modelId;
+          opt.textContent = modelId;
+          sel.appendChild(opt);
+        });
+        if (models.includes(selectedModel)) sel.value = selectedModel;
+      }
     });
 
     voiceSelects.forEach((sel) => {
       sel.innerHTML = '';
-      voices.forEach((voiceId) => {
+      if (!isRemote) {
         const opt = document.createElement('option');
-        opt.value = voiceId;
-        opt.textContent = voiceId;
+        opt.value = SYSTEM_TTS_PLACEHOLDER_VALUE;
+        opt.textContent = SYSTEM_TTS_PLACEHOLDER_VALUE;
         sel.appendChild(opt);
-      });
-      if (voices.includes(selectedVoice)) sel.value = selectedVoice;
+        sel.value = SYSTEM_TTS_PLACEHOLDER_VALUE;
+      } else {
+        voices.forEach((voiceId) => {
+          const opt = document.createElement('option');
+          opt.value = voiceId;
+          opt.textContent = voiceId;
+          sel.appendChild(opt);
+        });
+        if (voices.includes(selectedVoice)) sel.value = selectedVoice;
+      }
     });
   }
 
