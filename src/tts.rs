@@ -65,9 +65,9 @@ impl TtsConfig {
                 let model =
                     std::env::var("FUDOKI_TTS_OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini-tts".to_string());
                 let default_voice =
-                    std::env::var("FUDOKI_TTS_OPENAI_DEFAULT_VOICE").unwrap_or_else(|_| "alloy".to_string());
+                    std::env::var("FUDOKI_TTS_OPENAI_VOICE").unwrap_or_else(|_| "alloy".to_string());
                 let default_format =
-                    std::env::var("FUDOKI_TTS_OPENAI_DEFAULT_FORMAT").unwrap_or_else(|_| "mp3".to_string());
+                    std::env::var("FUDOKI_TTS_OPENAI_FORMAT").unwrap_or_else(|_| "mp3".to_string());
                 let default_provider = std::env::var("FUDOKI_TTS_DEFAULT_PROVIDER").ok();
 
                 Self::enabled(
@@ -129,4 +129,3 @@ impl TtsConfig {
         }
     }
 }
-
