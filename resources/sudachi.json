@@ -1,0 +1,13 @@
+{
+  "path": "resources/",
+  "systemDict": "system.dic",
+  "oovProviderPlugin": [
+    {
+      "class": "com.worksap.nlp.sudachi.SimpleOovPlugin",
+      "oovPOS": ["名詞", "普通名詞", "一般", "*", "*", "*"],
+      "leftId": 5968,
+      "rightId": 5968,
+      "cost": 3857
+    }
+  ]
+}
