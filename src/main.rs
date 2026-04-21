@@ -1,4 +1,4 @@
-pub mod app;
+use fudoki_backend::app;
 
 #[tokio::main]
 async fn main() {

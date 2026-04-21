@@ -15,6 +15,7 @@
 **Create**
 
 - `Cargo.toml`
+- `src/lib.rs`
 - `src/main.rs`
 - `src/app.rs`
 - `src/models.rs`
@@ -51,6 +52,7 @@
 
 **Files:**
 - Create: `Cargo.toml`
+- Create: `src/lib.rs`
 - Create: `src/main.rs`
 - Create: `src/app.rs`
 - Test: `tests/health.rs`
@@ -104,8 +106,13 @@ http-body-util = "0.1.3"
 ```
 
 ```rust
-// src/main.rs
+// src/lib.rs
 pub mod app;
+```
+
+```rust
+// src/main.rs
+use fudoki_backend::app;
 
 #[tokio::main]
 async fn main() {
@@ -152,7 +159,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Cargo.toml src/main.rs src/app.rs tests/health.rs
+git add Cargo.toml src/lib.rs src/main.rs src/app.rs tests/health.rs
 git commit -m "feat: bootstrap Rust backend health endpoint"
 ```
 
