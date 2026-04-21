@@ -113,6 +113,19 @@ Keep the current frontend files, but change the data source:
 
 This is the main behavior change and will use an explicit precedence order.
 
+### Guiding Principle
+
+When the system has high confidence, English-origin terms should be read the way a Japanese speaker would commonly say them in Japanese usage, not by naive letter-by-letter spelling.
+
+Examples:
+
+- `React` -> `リアクト`
+- `Docker` -> `ドッカー`
+- `GitHub` -> `ギットハブ`
+- `API` -> `エーピーアイ`
+
+When the system does not have high confidence, it must avoid inventing a Japanese-style reading.
+
 ### Classification Order
 
 1. Abbreviation
@@ -140,11 +153,22 @@ Use a curated built-in map for common technical words and product names where th
 
 ### Dictionary-Corrected English Rule
 
-If a token is alphabetic but not an abbreviation, query local correction data. If the backend can confidently map the English token to a Japanese equivalent or stable reading, use that reading and mark its source as dictionary-corrected.
+If a token is alphabetic but not an abbreviation, query local correction data. If the backend can confidently map the English token to the Japanese reading or expression that is commonly used in practice, use that reading and mark its source as dictionary-corrected.
 
 ### Unknown English Rule
 
 If no reliable correction exists, preserve the original English token and do not fabricate katakana. This avoids the current failure mode where ordinary English words are pronounced letter-by-letter.
+
+### TTS Contract for Unknown English
+
+Unknown English terms must not rely on the display-oriented `reading` field for speech behavior.
+
+- `reading` may be empty when the system intentionally avoids inventing a Japanese reading.
+- `tts_text` must be returned for every token.
+- For unknown English terms, `tts_text` must default to the original token text.
+- For abbreviations, overrides, and dictionary-corrected terms, `tts_text` should normally match the resolved pronunciation text.
+
+This keeps display behavior and speech behavior separate and avoids regressions where the UI looks correct but TTS becomes undefined or inconsistent.
 
 ## Dictionary Sources
 
@@ -219,19 +243,66 @@ Required token fields:
 - `surface`
 - `lemma`
 - `reading`
+- `tts_text`
 - `pos`
 - `source`
 - `confidence`
+
+Token field semantics:
+
+- `reading`
+  - display-oriented reading shown in the token UI
+  - may be empty for unknown English terms
+- `tts_text`
+  - speech-oriented text used by token, line, and full-text playback
+  - always present
+  - for unknown English terms, defaults to the original token text
 
 ### `GET /api/dictionary?term=...`
 
 Response fields should support the existing token-card UI:
 
+- `word`
 - normalized query term
 - `kanji`
 - `kana`
 - `senses`
 - optional metadata about lookup source
+
+Minimum response shape:
+
+```json
+{
+  "word": "React",
+  "query": "リアクト",
+  "kanji": [],
+  "kana": [
+    { "text": "リアクト", "common": false }
+  ],
+  "senses": [
+    {
+      "gloss": "React",
+      "partOfSpeech": ["noun"],
+      "field": [],
+      "misc": [],
+      "info": [],
+      "chineseSource": null
+    }
+  ],
+  "hasMultipleMeanings": false,
+  "totalResults": 1,
+  "lookupSource": "jmdict"
+}
+```
+
+Each `sense` must preserve these fields because the current frontend detail modal depends on them:
+
+- `gloss`
+- `partOfSpeech`
+- `field`
+- `misc`
+- `info`
+- `chineseSource`
 
 ## Error Handling
 
@@ -246,7 +317,22 @@ Response fields should support the existing token-card UI:
 
 - Replace `initSegmenter()` and browser `segment()` usage with a backend API client.
 - Move translation lookup from `window.dictionaryService` to backend requests.
+- Update playback code to prefer `token.tts_text` over `token.reading`.
 - Keep existing token rendering and TTS UI behavior.
+
+### Backend Readiness on Startup
+
+The frontend must not immediately call `/api/analyze` on first load without confirming backend readiness.
+
+Required startup behavior:
+
+1. On page startup, call `/api/health`.
+2. If the backend is not ready, show a dedicated non-fatal startup state such as "backend starting" instead of a generic analysis failure.
+3. Retry `/api/health` with bounded backoff.
+4. Only trigger automatic initial analysis after `/api/health` reports ready.
+5. If readiness is not reached within the retry window, keep the page usable and allow manual retry.
+
+This explicitly prevents regressions where existing auto-analysis runs before the local backend is ready.
 
 ### Transitional Compatibility
 
@@ -298,7 +384,9 @@ Cover:
 
 - `POST /api/analyze`
 - `GET /api/dictionary`
+- startup flow when `/api/health` is temporarily not ready
 - frontend can render returned token structures
+- frontend playback uses `tts_text` correctly
 
 ### Required Regression Samples
 
@@ -311,6 +399,11 @@ Include at least:
 - `Docker`
 - `vintage`
 - `browser`
+- `Web`
+- `Node.js`
+- `iOS`
+- `GitHub`
+- `TypeScript`
 - date expressions such as `4月` and `20日`
 - particle-sensitive examples such as `は`
 
@@ -342,6 +435,7 @@ Mitigation:
 
 - Ordinary English words are no longer read as letter-by-letter abbreviations by default.
 - Known abbreviations still behave correctly.
+- Known English technical terms and loanwords are read using common Japanese usage when confidence is high.
 - Loanword and modern vocabulary segmentation is noticeably better than the current browser tokenizer.
 - Clicking a token card returns dictionary data without loading large client-side dictionary blobs first.
 - Backend startup failures are visible and actionable.
