@@ -11,6 +11,8 @@ __pycache__/
 # 临时文件
 *.tmp
 *.log
+target/
+resources/system.dic
 
 # Local git worktrees
 .worktrees/

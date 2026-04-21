@@ -5703,9 +5703,30 @@ Try Fudoki and enjoy Japanese language analysis!`;
   // 全局函数，供其他地方调用
   window.analyzeText = analyzeText;
 
+  async function waitForBackendApiClient(retries = 40, delayMs = 50) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      const api = window.FudokiBackendApi;
+      if (
+        api &&
+        typeof api.waitForBackendReady === 'function' &&
+        typeof api.analyzeTextRequest === 'function' &&
+        typeof api.lookupDictionaryRequest === 'function'
+      ) {
+        return api;
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    return null;
+  }
+
   async function bootstrapAnalysis() {
     try {
-      const health = await window.FudokiBackendApi.waitForBackendReady();
+      const backendApi = await waitForBackendApiClient();
+      if (!backendApi) {
+        showErrorState('backend api not ready');
+        return;
+      }
+      const health = await backendApi.waitForBackendReady();
       if (!health || health.status !== 'ready') {
         showErrorState('backend not ready');
         return;

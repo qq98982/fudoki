@@ -41,8 +41,10 @@ test("main-js analyzes and looks up via backend helper APIs", () => {
 });
 
 test("main-js bootstraps analysis only after backend readiness", () => {
+  assert.ok(mainJsSource.includes("async function waitForBackendApiClient("));
   assert.ok(mainJsSource.includes("async function bootstrapAnalysis()"));
-  assert.ok(mainJsSource.includes("window.FudokiBackendApi.waitForBackendReady"));
+  assert.ok(mainJsSource.includes("const backendApi = await waitForBackendApiClient();"));
+  assert.ok(mainJsSource.includes("backendApi.waitForBackendReady()"));
   assert.ok(mainJsSource.includes("bootstrapAnalysis();"));
 });
 
