@@ -12,7 +12,6 @@ __pycache__/
 *.tmp
 *.log
 target/
-resources/system.dic
 
 # Local git worktrees
 .worktrees/
