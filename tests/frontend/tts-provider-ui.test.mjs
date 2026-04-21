@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const readmeSource = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
+const gitignoreSource = readFileSync(resolve(__dirname, "../../.gitignore"), "utf8");
+const envExamplePath = resolve(__dirname, "../../.env.example");
 const mainJsSource = readFileSync(resolve(__dirname, "../../static/main-js.js"), "utf8");
 const i18nSource = readFileSync(resolve(__dirname, "../../static/js/i18n.js"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "../../static/styles.css"), "utf8");
@@ -42,4 +45,29 @@ test("i18n includes labels for the new provider UI", () => {
 test("styles include a compact provider status treatment", () => {
   assert.ok(stylesSource.includes(".tts-provider-status"));
   assert.ok(stylesSource.includes(".tts-provider-status.is-error"));
+});
+
+test("playback entry points delegate line and full text through the selected provider", () => {
+  assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(lineText, 'line')"));
+  assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(readingParts, 'full')"));
+  assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(text, 'full')"));
+  assert.ok(mainJsSource.includes("playTextThroughSelectedProvider(textToSpeak, 'token')"));
+});
+
+test(".env.example is present and documents the required remote tts keys", () => {
+  assert.equal(existsSync(envExamplePath), true);
+  const envExampleSource = readFileSync(envExamplePath, "utf8");
+  assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_BASE_URL"));
+  assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_API_KEY"));
+  assert.ok(envExampleSource.includes("FUDOKI_TTS_OPENAI_MODEL"));
+});
+
+test("gitignore excludes the local .env file", () => {
+  assert.ok(gitignoreSource.includes(".env"));
+});
+
+test("README explains online tts configuration and env defaults", () => {
+  assert.ok(readmeSource.includes("FUDOKI_TTS_OPENAI_BASE_URL"));
+  assert.ok(readmeSource.includes("FUDOKI_TTS_DEFAULT_PROVIDER"));
+  assert.ok(readmeSource.includes("OpenAI-compatible"));
 });

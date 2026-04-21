@@ -58,6 +58,17 @@ Launcher behavior:
 - starts the server with `cargo run`
 - then open http://127.0.0.1:8000
 
+### Online TTS (OpenAI-compatible)
+By default, Fudoki can use the browser's built-in Web Speech API ("system" TTS). To enable remote/online TTS, configure a local `.env` file (see `.env.example`) and pick the `openai-compatible` provider in Settings.
+
+Relevant environment variables (defaults shown in `.env.example`):
+```env
+FUDOKI_TTS_DEFAULT_PROVIDER=openai-compatible
+FUDOKI_TTS_OPENAI_BASE_URL=https://api.openai.com/v1
+FUDOKI_TTS_OPENAI_API_KEY=your_api_key_here
+FUDOKI_TTS_OPENAI_MODEL=gpt-4o-mini-tts
+```
+
 ### Backend APIs
 - `GET /api/health`
 - `POST /api/analyze`

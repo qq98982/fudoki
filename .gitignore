@@ -1,5 +1,8 @@
 .DS_Store
 
+# Local env (secrets / machine-specific)
+.env
+
 # 大文件 - 使用分片版本替代
 static/libs/dict/jmdict-eng-3.6.1.json
 
