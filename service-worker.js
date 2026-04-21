@@ -8,7 +8,7 @@
 'use strict';
 
 const CACHE_PREFIX = 'fudoki-cache';
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `${CACHE_PREFIX}-${CACHE_VERSION}`;
 
 // Resolve fallback HTML relative to SW scope
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
   // Only handle same-origin asset requests
   if (!isSameOrigin(req)) return;
 
-  event.respondWith(cacheFirst(req));
+  event.respondWith(staleWhileRevalidate(req, event));
 });
 
 // Message protocol for controlled caching and reset
@@ -105,6 +105,40 @@ async function cacheFirst(request) {
     if (fallback) return fallback;
     throw error;
   }
+}
+
+async function staleWhileRevalidate(request, event) {
+  if (!isCacheableRequest(request)) {
+    return fetch(request);
+  }
+
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request, { ignoreSearch: true });
+  if (cached) {
+    event.waitUntil(refreshCachedResponse(request));
+    return cached;
+  }
+
+  try {
+    return await refreshCachedResponse(request, cache);
+  } catch (error) {
+    const fallback = await cache.match(request, { ignoreSearch: true });
+    if (fallback) return fallback;
+    throw error;
+  }
+}
+
+async function refreshCachedResponse(request, existingCache = null) {
+  const cache = existingCache || await caches.open(CACHE_NAME);
+  const response = await fetch(request);
+  if (shouldCacheResponse(response) && isCacheableRequest(request)) {
+    try {
+      await cache.put(request, response.clone());
+    } catch (cacheError) {
+      console.warn('[SW] Cache put failed:', cacheError);
+    }
+  }
+  return response;
 }
 
 async function networkFirst(request, fallbackUrl) {
