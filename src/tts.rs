@@ -52,6 +52,7 @@ pub struct ApiErrorResponse {
 pub struct SynthesizedSpeech {
     pub content_type: String,
     pub bytes: Vec<u8>,
+    pub cache_status: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -231,7 +232,9 @@ impl TtsCacheState {
         let tick = self.next_usage_tick();
         let entry = self.entries.get_mut(key)?;
         entry.last_used_tick = tick;
-        Some(entry.speech.clone())
+        let mut speech = entry.speech.clone();
+        speech.cache_status = "hit";
+        Some(speech)
     }
 
     fn insert(&mut self, key: CacheKey, speech: SynthesizedSpeech) {
@@ -589,6 +592,7 @@ impl TtsConfig {
         let speech = SynthesizedSpeech {
             content_type,
             bytes: bytes.to_vec(),
+            cache_status: "miss",
         };
 
         if let Ok(mut cache) = self.cache.lock() {

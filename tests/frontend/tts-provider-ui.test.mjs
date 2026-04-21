@@ -56,6 +56,8 @@ test("i18n includes labels for the new provider UI", () => {
   assert.ok(i18nSource.includes("remoteTtsVoiceLabel"));
   assert.ok(i18nSource.includes("ttsStatusAvailable"));
   assert.ok(i18nSource.includes("ttsStatusRequestFailed"));
+  assert.ok(i18nSource.includes("ttsCacheHit"));
+  assert.ok(i18nSource.includes("ttsCacheMiss"));
 });
 
 test("styles include a compact provider status treatment", () => {
@@ -71,6 +73,9 @@ test("playback entry points delegate line and full text through the selected pro
   assert.ok(mainJsSource.includes("payload.model"));
   assert.ok(mainJsSource.includes("payload.voice"));
   assert.ok(mainJsSource.includes("payload.speed"));
+  assert.ok(mainJsSource.includes("response.headers.get('x-fudoki-tts-cache')"));
+  assert.ok(mainJsSource.includes("showInfoToast(t('ttsCacheHit')"));
+  assert.ok(mainJsSource.includes("showInfoToast(t('ttsCacheMiss')"));
   assert.ok(mainJsSource.includes("isPlaying || isRemotePlaybackActive()"));
   assert.ok(mainJsSource.includes("setHeaderRemoteTtsState"));
 });
