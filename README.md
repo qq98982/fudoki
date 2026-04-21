@@ -53,7 +53,7 @@ run.bat
 
 Launcher behavior:
 - checks required tools
-- downloads the latest official Sudachi core dictionary if `resources/system.dic` is missing
+- runs `git lfs pull` if `resources/system.dic` is missing
 - runs `cargo build`
 - starts the server with `cargo run`
 - then open http://127.0.0.1:8000
@@ -161,7 +161,7 @@ run.bat
 
 ランチャーの動作:
 - 必要なコマンドをチェック
-- `resources/system.dic` がない場合、最新の公式 Sudachi core 辞書を自動ダウンロード
+- `resources/system.dic` がない場合、`git lfs pull` を実行して必要なアセットを取得
 - `cargo build` を実行
 - `cargo run` でサーバーを起動
 - ブラウザで http://127.0.0.1:8000 を開く
@@ -245,7 +245,7 @@ run.bat
 
 脚本行为：
 - 检查所需命令
-- 当 `resources/system.dic` 缺失时，自动下载最新官方 Sudachi core 词典
+- 当 `resources/system.dic` 缺失时，执行 `git lfs pull` 拉取所需资源
 - 执行 `cargo build`
 - 使用 `cargo run` 启动服务
 - 浏览器访问 http://127.0.0.1:8000
