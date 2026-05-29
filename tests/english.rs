@@ -17,9 +17,17 @@ fn known_technical_term_uses_japanese_usage() {
 }
 
 #[test]
-fn unknown_english_term_keeps_original_text_for_tts() {
+fn dictionary_corrected_english_term_uses_loanword_reading() {
     let result = classify_english_token("browser");
+    assert_eq!(result.kind, "dictionary_corrected");
+    assert_eq!(result.reading, "ブラウザ");
+    assert_eq!(result.tts_text, "ブラウザ");
+}
+
+#[test]
+fn unknown_english_term_keeps_original_text_for_tts() {
+    let result = classify_english_token("xyzzy");
     assert_eq!(result.kind, "unknown");
     assert_eq!(result.reading, "");
-    assert_eq!(result.tts_text, "browser");
+    assert_eq!(result.tts_text, "xyzzy");
 }
