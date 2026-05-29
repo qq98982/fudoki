@@ -117,44 +117,79 @@ impl DocumentsRepository {
         id: &str,
         request: UpdateDocumentRequest,
     ) -> Result<DocumentPayload, UpdateDocumentError> {
-        let existing = self.get(id)?.ok_or(UpdateDocumentError::NotFound)?;
-        if existing.revision != request.expected_revision {
-            return Err(UpdateDocumentError::Conflict);
-        }
+        let id_owned = id.to_string();
+        let result: rusqlite::Result<Result<DocumentPayload, UpdateDocumentError>> =
+            self.db.with_connection(|conn| {
+                let tx = conn.unchecked_transaction()?;
 
-        let title_mode = request.title_mode.unwrap_or(existing.title_mode.clone());
-        let title = resolve_title(request.title, &request.content, &title_mode);
-        let updated = DocumentPayload {
-            id: existing.id,
-            title,
-            title_mode,
-            content: request.content,
-            source_kind: existing.source_kind,
-            created_at: existing.created_at,
-            updated_at: now_millis(),
-            revision: existing.revision + 1,
-        };
+                let existing = tx
+                    .query_row(
+                        r#"
+                        SELECT id, title, title_mode, content, source_kind, created_at, updated_at, revision
+                        FROM documents
+                        WHERE id = ?1 AND deleted_at IS NULL
+                        "#,
+                        [&id_owned],
+                        |row| {
+                            Ok(DocumentPayload {
+                                id: row.get(0)?,
+                                title: row.get(1)?,
+                                title_mode: TitleMode::from_db_value(&row.get::<_, String>(2)?),
+                                content: row.get(3)?,
+                                source_kind: row.get(4)?,
+                                created_at: row.get(5)?,
+                                updated_at: row.get(6)?,
+                                revision: row.get(7)?,
+                            })
+                        },
+                    )
+                    .optional()?;
 
-        self.db.with_connection(|conn| {
-            conn.execute(
-                r#"
-                UPDATE documents
-                SET title = ?2, title_mode = ?3, content = ?4, updated_at = ?5, revision = ?6
-                WHERE id = ?1 AND deleted_at IS NULL
-                "#,
-                params![
-                    &updated.id,
-                    &updated.title,
-                    updated.title_mode.as_db_value(),
-                    &updated.content,
-                    updated.updated_at,
-                    updated.revision,
-                ],
-            )?;
-            Ok(())
-        })?;
+                let existing = match existing {
+                    Some(doc) => doc,
+                    None => return Ok(Err(UpdateDocumentError::NotFound)),
+                };
 
-        Ok(updated)
+                if existing.revision != request.expected_revision {
+                    return Ok(Err(UpdateDocumentError::Conflict));
+                }
+
+                let title_mode = request.title_mode.unwrap_or(existing.title_mode.clone());
+                let title = resolve_title(request.title, &request.content, &title_mode);
+                let now = now_millis();
+                let next_revision = existing.revision + 1;
+
+                tx.execute(
+                    r#"
+                    UPDATE documents
+                    SET title = ?2, title_mode = ?3, content = ?4, updated_at = ?5, revision = ?6
+                    WHERE id = ?1 AND deleted_at IS NULL
+                    "#,
+                    params![
+                        &existing.id,
+                        &title,
+                        title_mode.as_db_value(),
+                        &request.content,
+                        now,
+                        next_revision,
+                    ],
+                )?;
+
+                tx.commit()?;
+
+                Ok(Ok(DocumentPayload {
+                    id: existing.id,
+                    title,
+                    title_mode,
+                    content: request.content,
+                    source_kind: existing.source_kind,
+                    created_at: existing.created_at,
+                    updated_at: now,
+                    revision: next_revision,
+                }))
+            });
+
+        result.map_err(UpdateDocumentError::from)?
     }
 
     pub fn delete(&self, id: &str) -> rusqlite::Result<bool> {

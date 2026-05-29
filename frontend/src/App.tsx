@@ -328,7 +328,6 @@ function WorkspaceApp() {
           const latest = await documentsQuery.refetch()
           const freshDocument = latest.data?.documents.find((document) => document.id === activeDocument.id)
           if (freshDocument) {
-            setDraft(freshDocument.content)
             setDraftRevision(freshDocument.revision)
           }
           setSaveState('conflict')
@@ -517,6 +516,9 @@ function WorkspaceApp() {
         setAnalysisSource(null)
         lastAnalyzedTextRef.current = ''
         lastAnalyzedSignatureRef.current = ''
+        if (content.trim()) {
+          void handleAnalyzeInternal('auto')
+        }
         return
       }
 
