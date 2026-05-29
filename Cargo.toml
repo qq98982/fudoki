@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = "0.8.8"
-tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "signal"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 tower = { version = "0.5.2", features = ["util"] }
@@ -13,6 +13,10 @@ tower-http = { version = "0.6.8", features = ["fs"] }
 sudachi = { git = "https://github.com/WorksApplications/sudachi.rs.git", package = "sudachi" }
 dotenvy = "0.15.7"
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
+dirs = "6.0.0"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+sha2 = "0.10.9"
+uuid = { version = "1.8.0", features = ["v7", "serde"] }
 
 [dev-dependencies]
 http-body-util = "0.1.3"
