@@ -9,6 +9,8 @@ use sudachi::dic::dictionary::JapaneseDictionary;
 
 use crate::english::classify_english_token;
 use crate::models::TokenPayload;
+use crate::number_reading::enhance_numeric_token_readings;
+use crate::reading_normalization::normalize_token_readings;
 
 pub struct Analyzer {
     tokenizer: StatelessTokenizer<Arc<JapaneseDictionary>>,
@@ -37,9 +39,7 @@ impl Analyzer {
                     .iter()
                     .map(|morpheme| {
                         let surface = morpheme.surface().to_string();
-                        if surface.chars().all(|c| {
-                            c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-' | '_')
-                        }) {
+                        if is_english_like_token(&surface) {
                             let english = classify_english_token(&surface);
                             return TokenPayload {
                                 surface: surface.clone(),
@@ -65,8 +65,31 @@ impl Analyzer {
                     })
                     .collect::<Vec<_>>();
 
+                let mut tokens = tokens;
+                enhance_numeric_token_readings(&mut tokens);
+                normalize_token_readings(&mut tokens);
+
                 Some(tokens)
             })
             .collect()
     }
+}
+
+fn is_english_like_token(surface: &str) -> bool {
+    let mut has_ascii_letter = false;
+
+    for ch in surface.chars() {
+        if ch.is_ascii_alphabetic() {
+            has_ascii_letter = true;
+            continue;
+        }
+
+        if ch.is_ascii_digit() || matches!(ch, '.' | '+' | '-' | '_') {
+            continue;
+        }
+
+        return false;
+    }
+
+    has_ascii_letter
 }

@@ -13,25 +13,23 @@
 ## English
 
 ### Overview
-Fudoki serves the existing frontend from a local Rust backend, analyzes Japanese text with Sudachi, and reads text aloud via the Web Speech API.
+Fudoki is now a local-first React frontend served by a Rust backend. Rust handles Sudachi-based analysis, dictionary lookup, remote TTS, and SQLite persistence for documents and settings.
 
 ### Features
-- **Markdown Editor**: Built-in EasyMDE markdown editor for rich text formatting while maintaining full Japanese analysis capabilities.
-- Text analysis: Rust backend (`sudachi.rs`) segmentation, POS tags, kana and romaji.
-- Speech synthesis: play word/line/all; speed 0.5–2.0; voice selection.
-- Playback controls: separate Pause/Resume; Play button shows a stop icon while playing.
-- Instant setting changes: changing voice or speed during playback pauses first and then resumes near the current position; settings persist in localStorage.
-- Dictionary: JMdict integration; click a word card to view translations.
-- Documents: multiple documents, autosave, quick switching.
-- UI: dark mode, toggle display options, multilingual interface, draggable toolbar.
-- Mobile: on small screens (≤480px) the header speed slider and voice select are compressed in width; left-aligned play buttons and right-aligned controls.
+- React workspace with a simplified multi-document rail, editor surface, and inspector panel.
+- Local SQLite persistence for documents and settings.
+- Text analysis: Rust backend segmentation, POS tags, and reading metadata.
+- Dictionary: JMdict integration via Rust API.
+- TTS: system/browser speech plus OpenAI-compatible remote speech.
+- Legacy browser-data import from the previous frontend on first launch in the same browser.
+- Multilingual UI and theme toggles.
 
 ### Usage
 Online: https://fudoki.iamcheyan.com
 
 Local:
 ```bash
-npm install
+./run.sh
 ```
 
 Preferred launchers:
@@ -54,6 +52,8 @@ run.bat
 Launcher behavior:
 - checks required tools
 - runs `git lfs pull` if `resources/system.dic` is missing
+- runs `npm --prefix frontend install` when frontend dependencies are missing
+- runs `npm --prefix frontend run build`
 - runs `cargo build`
 - starts the server with `cargo run`
 - then open http://127.0.0.1:8000
@@ -89,23 +89,13 @@ When `FUDOKI_TTS_OPENAI_MODEL_OPTIONS` or `FUDOKI_TTS_OPENAI_VOICE_OPTIONS` are 
 | 🔴 | Particle |
 | 🟡 | Interjection |
 
-### Markdown Support
-
-The app now features a built-in **EasyMDE** markdown editor that replaces the standard textarea while maintaining full compatibility with Japanese analysis features:
-
-- **Rich text editing**: Use the toolbar for quick formatting (bold, italic, headers, lists, quotes, links, images)
-- **Live preview**: Side-by-side markdown preview mode
-- **Full-screen mode**: Distraction-free writing experience
-- **Syntax highlighting**: Visual markdown syntax support
-- **Seamless integration**: Japanese analysis works automatically on your markdown content
-
-For detailed documentation about the markdown integration, see [MARKDOWN_README.md](./MARKDOWN_README.md).
-
 ### Development
 ```
 fudoki/
 ├── Cargo.toml
-├── index.html
+├── frontend/
+│   ├── src/
+│   └── dist/
 ├── src/
 │   ├── main.rs
 │   └── ...
@@ -113,16 +103,12 @@ fudoki/
 │   ├── sudachi.json
 │   └── system.dic
 ├── static/
-│   ├── main-js.js
-│   ├── js/backend-api.js
-│   ├── styles.css
-│   └── libs/
-│       └── dict/chunks/
+│   └── ...
 └── README.md
 ```
-
-- Update theme colors in `static/styles.css` via CSS variables.
-- Place updated JMdict data under `static/libs/dict/`.
+- Frontend source lives under `frontend/`.
+- Built frontend assets are served from `frontend/dist/`.
+- Rust persists local data in SQLite and serves the app and APIs.
 
 ### License and Third-party
 - MIT License
@@ -137,25 +123,23 @@ Pull requests are welcome. For issues and feature requests, use GitHub Issues: h
 ## 日本語
 
 ### 概要
-Fudoki は Rust バックエンドでフロントエンドを配信し、Sudachi で日本語を解析して Web Speech API で朗読するツールです。
+Fudoki は React フロントエンドを Rust バックエンドから配信するローカル優先アプリです。Rust は Sudachi による解析、辞書参照、リモート TTS、SQLite による文書と設定の永続化を担当します。
 
 ### 主な機能
-- **Markdown エディタ**：日本語解析機能を保ちながら、リッチテキスト編集ができる EasyMDE エディタを搭載。
-- 形態素解析：分割、品詞、読み（かな／ローマ字）。
-- 音声合成：単語・行・全文の再生、話速 0.5–2.0、音色選択。
-- 再生制御：一時停止／再開は専用ボタン。再生中は再生ボタンが停止アイコンになります。
-- 設定の即時反映：再生中に音色や話速を変更すると、一度停止してから現在位置付近から新設定で再開します。設定は localStorage に保存されます。
-- 辞書：JMdict と連携、単語カードのクリックで訳語を表示。
-- 文書管理：複数文書、自動保存、簡易切替。
-- UI：ダークモード、表示切替、多言語 UI、ツールバーのドラッグ。
-- モバイル：480px 以下では速度スライダーと音色選択の幅を縮小。左に再生ボタン、右に設定。
+- 簡素化した複数文書リスト、編集領域、インスペクタを備えた React ワークスペース。
+- 文書と設定を SQLite に保存するローカル永続化。
+- 形態素解析：Rust バックエンドによる分割、品詞、読み情報。
+- 辞書：Rust API 経由の JMdict 参照。
+- TTS：ブラウザの system 音声と OpenAI 互換の remote 音声。
+- 旧フロントエンドのブラウザ内データを初回起動時に移行。
+- 多言語 UI とテーマ切替。
 
 ### 使い方
 オンライン：https://fudoki.iamcheyan.com
 
 ローカル：
 ```bash
-npm install
+./run.sh
 ```
 
 推奨ランチャー:
@@ -178,6 +162,8 @@ run.bat
 ランチャーの動作:
 - 必要なコマンドをチェック
 - `resources/system.dic` がない場合、`git lfs pull` を実行して必要なアセットを取得
+- フロントエンド依存がなければ `npm --prefix frontend install` を実行
+- `npm --prefix frontend run build` を実行
 - `cargo build` を実行
 - `cargo run` でサーバーを起動
 - ブラウザで http://127.0.0.1:8000 を開く

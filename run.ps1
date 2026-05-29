@@ -20,6 +20,7 @@ function Require-GitLfs {
 
 Require-Command cargo
 Require-Command node
+Require-Command npm
 Require-Command git
 Require-GitLfs
 
@@ -39,5 +40,15 @@ if (-not (Test-Path $DictPath)) {
 }
 
 Set-Location $RootDir
+if (-not (Test-Path (Join-Path $RootDir "frontend/node_modules"))) {
+    & npm --prefix frontend install
+    if ($LASTEXITCODE -ne 0) {
+        throw "frontend npm install failed."
+    }
+}
+& npm --prefix frontend run build
+if ($LASTEXITCODE -ne 0) {
+    throw "frontend build failed."
+}
 cargo build
 cargo run

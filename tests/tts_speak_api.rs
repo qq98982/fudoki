@@ -7,11 +7,29 @@ use axum::{
     Json, Router,
 };
 use http_body_util::BodyExt;
+use rusqlite::Connection;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
 
 use fudoki_backend::tts::{OpenAiCompatibleConfig, TtsConfig};
+
+fn unique_temp_dir(prefix: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("fudoki-{prefix}-{stamp}"));
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+
+fn build_test_router(tts: TtsConfig, prefix: &str) -> axum::Router {
+    fudoki_backend::app::build_router_with_tts_config_and_data_dir(tts, unique_temp_dir(prefix))
+}
 
 async fn spawn_fake_upstream(app: Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -34,7 +52,7 @@ async fn speak_endpoint_returns_audio_bytes_from_upstream() {
     )
     .await;
 
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: upstream_url,
             api_key: "test-key".to_string(),
@@ -45,7 +63,7 @@ async fn speak_endpoint_returns_audio_bytes_from_upstream() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-audio-bytes");
 
     let response = app
         .oneshot(
@@ -88,7 +106,7 @@ async fn speak_endpoint_returns_explicit_json_error_when_upstream_rejects_creden
     )
     .await;
 
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: upstream_url,
             api_key: "bad-key".to_string(),
@@ -99,7 +117,7 @@ async fn speak_endpoint_returns_explicit_json_error_when_upstream_rejects_creden
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-upstream-error");
 
     let response = app
         .oneshot(
@@ -123,7 +141,7 @@ async fn speak_endpoint_returns_explicit_json_error_when_upstream_rejects_creden
 
 #[tokio::test]
 async fn speak_endpoint_does_not_mark_provider_unavailable_after_bad_request() {
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: "https://example.invalid/v1".to_string(),
             api_key: "test-key".to_string(),
@@ -134,7 +152,7 @@ async fn speak_endpoint_does_not_mark_provider_unavailable_after_bad_request() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-bad-request");
 
     let response = app
         .clone()
@@ -188,7 +206,7 @@ async fn speak_endpoint_forwards_selected_model_and_voice_to_upstream() {
     )
     .await;
 
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: upstream_url,
             api_key: "test-key".to_string(),
@@ -199,7 +217,7 @@ async fn speak_endpoint_forwards_selected_model_and_voice_to_upstream() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-forwards-selection");
 
     let response = app
         .oneshot(
@@ -225,7 +243,7 @@ async fn speak_endpoint_forwards_selected_model_and_voice_to_upstream() {
 
 #[tokio::test]
 async fn speak_endpoint_rejects_remote_model_not_in_allowed_options() {
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: "https://example.invalid/v1".to_string(),
             api_key: "test-key".to_string(),
@@ -236,7 +254,7 @@ async fn speak_endpoint_rejects_remote_model_not_in_allowed_options() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-reject-model");
 
     let response = app
         .oneshot(
@@ -260,7 +278,7 @@ async fn speak_endpoint_rejects_remote_model_not_in_allowed_options() {
 
 #[tokio::test]
 async fn speak_endpoint_rejects_remote_voice_not_in_allowed_options() {
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: "https://example.invalid/v1".to_string(),
             api_key: "test-key".to_string(),
@@ -271,7 +289,7 @@ async fn speak_endpoint_rejects_remote_voice_not_in_allowed_options() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-reject-voice");
 
     let response = app
         .oneshot(
@@ -311,7 +329,7 @@ async fn speak_endpoint_reuses_cached_audio_for_same_document_revision() {
     )
     .await;
 
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: upstream_url,
             api_key: "test-key".to_string(),
@@ -322,7 +340,7 @@ async fn speak_endpoint_reuses_cached_audio_for_same_document_revision() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-cache-same-revision");
 
     let request_body = r#"{"provider":"openai-compatible","text":"こんにちは","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
 
@@ -373,7 +391,7 @@ async fn speak_endpoint_evicts_only_changed_document_revision() {
     )
     .await;
 
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: upstream_url,
             api_key: "test-key".to_string(),
@@ -384,7 +402,7 @@ async fn speak_endpoint_evicts_only_changed_document_revision() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-evict-changed-revision");
 
     let doc1_rev1 = r#"{"provider":"openai-compatible","text":"こんにちは","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
     let doc2_rev1 = r#"{"provider":"openai-compatible","text":"さようなら","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-2","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
@@ -427,7 +445,7 @@ async fn speak_endpoint_clears_entire_cache_when_cache_scope_changes() {
     )
     .await;
 
-    let app = fudoki_backend::app::build_router_with_tts_config(TtsConfig::enabled(
+    let app = build_test_router(TtsConfig::enabled(
         OpenAiCompatibleConfig {
             base_url: upstream_url,
             api_key: "test-key".to_string(),
@@ -438,7 +456,7 @@ async fn speak_endpoint_clears_entire_cache_when_cache_scope_changes() {
             default_format: "mp3".to_string(),
         },
         Some("openai-compatible".to_string()),
-    ));
+    ), "tts-clear-scope-change");
 
     let scope_a_doc1 = r#"{"provider":"openai-compatible","text":"こんにちは","model":"gpt-4o-mini-tts","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
     let scope_a_doc2 = r#"{"provider":"openai-compatible","text":"さようなら","model":"gpt-4o-mini-tts","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-2","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
@@ -462,4 +480,83 @@ async fn speak_endpoint_clears_entire_cache_when_cache_scope_changes() {
     }
 
     assert_eq!(request_count.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn speak_endpoint_persists_remote_cache_metadata_and_audio_across_router_rebuild() {
+    let dir = unique_temp_dir("tts-persistent-cache");
+
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let request_count_clone = request_count.clone();
+    let upstream_url = spawn_fake_upstream(
+        Router::new().route(
+            "/v1/audio/speech",
+            post(move || {
+                let request_count_clone = request_count_clone.clone();
+                async move {
+                    request_count_clone.fetch_add(1, Ordering::SeqCst);
+                    ([(header::CONTENT_TYPE, "audio/mpeg")], vec![6_u8, 6_u8, 1_u8]).into_response()
+                }
+            }),
+        ),
+    )
+    .await;
+
+    let config = TtsConfig::enabled(
+        OpenAiCompatibleConfig {
+            base_url: upstream_url,
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini-tts".to_string(),
+            model_options: vec!["gpt-4o-mini-tts".to_string()],
+            default_voice: "alloy".to_string(),
+            voice_options: vec!["alloy".to_string()],
+            default_format: "mp3".to_string(),
+        },
+        Some("openai-compatible".to_string()),
+    );
+
+    let request_body = r#"{"provider":"openai-compatible","text":"保存される読み上げ","voice":"alloy","format":"mp3","speed":1.0,"document_id":"doc-persist-1","document_revision":1,"cache_scope_version":"openai-compatible|gpt-4o-mini-tts|alloy|mp3"}"#;
+
+    let first_app = fudoki_backend::app::build_router_with_tts_config_and_data_dir(
+        config.clone(),
+        dir.clone(),
+    );
+    let first = first_app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let rebuilt_app = fudoki_backend::app::build_router_with_tts_config_and_data_dir(config, dir.clone());
+    let second = rebuilt_app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/tts/speak")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::OK);
+
+    assert_eq!(request_count.load(Ordering::SeqCst), 1);
+
+    let db = Connection::open(dir.join("fudoki.db")).unwrap();
+    let count: i64 = db
+        .query_row("SELECT COUNT(*) FROM tts_audio_cache", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+
+    let cache_dir = dir.join("tts-cache");
+    let audio_files = fs::read_dir(cache_dir).unwrap().count();
+    assert_eq!(audio_files, 1);
 }

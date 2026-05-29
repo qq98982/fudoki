@@ -5,6 +5,9 @@ use std::time::{Duration, Instant};
 use axum::http::{header, StatusCode};
 use serde::{Deserialize, Serialize};
 
+use crate::storage::db::AppDatabase;
+use crate::storage::tts_cache_repo::{TtsCacheKey, TtsCacheRepository};
+
 #[derive(Clone)]
 pub struct OpenAiCompatibleConfig {
     pub base_url: String,
@@ -86,17 +89,6 @@ pub struct TtsProvidersResponse {
 const REMOTE_TTS_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
 const REMOTE_TTS_CACHE_MAX_ENTRIES: usize = 64;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct CacheKey {
-    provider: String,
-    document_id: Option<String>,
-    text: String,
-    model: String,
-    voice: String,
-    format: String,
-    speed_hundredths: u16,
-}
-
 #[derive(Clone, Debug)]
 struct CacheEntry {
     speech: SynthesizedSpeech,
@@ -106,8 +98,8 @@ struct CacheEntry {
 
 #[derive(Default)]
 struct TtsCacheState {
-    entries: HashMap<CacheKey, CacheEntry>,
-    document_keys: HashMap<String, HashSet<CacheKey>>,
+    entries: HashMap<TtsCacheKey, CacheEntry>,
+    document_keys: HashMap<String, HashSet<TtsCacheKey>>,
     document_revisions: HashMap<String, u64>,
     cache_scope_version: Option<String>,
     usage_clock: u64,
@@ -154,7 +146,7 @@ impl TtsCacheState {
         }
     }
 
-    fn remove_key(&mut self, key: &CacheKey) {
+    fn remove_key(&mut self, key: &TtsCacheKey) {
         let Some(removed) = self.entries.remove(key) else {
             return;
         };
@@ -215,7 +207,7 @@ impl TtsCacheState {
         }
     }
 
-    fn get(&mut self, key: &CacheKey) -> Option<SynthesizedSpeech> {
+    fn get(&mut self, key: &TtsCacheKey) -> Option<SynthesizedSpeech> {
         self.prune_expired();
 
         let now = Instant::now();
@@ -234,7 +226,7 @@ impl TtsCacheState {
         Some(entry.speech.clone())
     }
 
-    fn insert(&mut self, key: CacheKey, speech: SynthesizedSpeech) {
+    fn insert(&mut self, key: TtsCacheKey, speech: SynthesizedSpeech) {
         self.prune_expired();
 
         if self.entries.contains_key(&key) {
@@ -272,6 +264,7 @@ pub struct TtsConfig {
     default_provider: String,
     last_error: Arc<Mutex<Option<String>>>,
     cache: Arc<Mutex<TtsCacheState>>,
+    persistent_cache: Option<Arc<TtsCacheRepository>>,
 }
 
 impl TtsConfig {
@@ -304,8 +297,8 @@ impl TtsConfig {
         voice: &str,
         response_format: &str,
         speed: f32,
-    ) -> CacheKey {
-        CacheKey {
+    ) -> TtsCacheKey {
+        TtsCacheKey {
             provider: provider.to_string(),
             document_id: request.document_id.clone(),
             text: request.text.clone(),
@@ -351,6 +344,7 @@ impl TtsConfig {
             default_provider: "system".to_string(),
             last_error: Arc::new(Mutex::new(None)),
             cache: Arc::new(Mutex::new(TtsCacheState::default())),
+            persistent_cache: None,
         }
     }
 
@@ -365,7 +359,20 @@ impl TtsConfig {
             default_provider: default_provider.unwrap_or(openai_id),
             last_error: Arc::new(Mutex::new(None)),
             cache: Arc::new(Mutex::new(TtsCacheState::default())),
+            persistent_cache: None,
         }
+    }
+
+    pub fn with_persistent_cache(mut self, db: AppDatabase) -> Self {
+        match TtsCacheRepository::new(db) {
+            Ok(repo) => {
+                self.persistent_cache = Some(Arc::new(repo));
+            }
+            Err(error) => {
+                eprintln!("tts: failed to initialize persistent cache: {error}");
+            }
+        }
+        self
     }
 
     pub fn from_env() -> Self {
@@ -540,6 +547,19 @@ impl TtsConfig {
             }
         }
 
+        if let Some(persistent_cache) = &self.persistent_cache {
+            if let Err(error) = persistent_cache.prepare_request_scope(request) {
+                eprintln!("tts: failed preparing persistent cache scope: {error}");
+            } else if let Ok(Some(cached)) = persistent_cache.get(&cache_key) {
+                if let Ok(mut cache) = self.cache.lock() {
+                    cache.apply_request_scope(request);
+                    cache.insert(cache_key.clone(), cached.clone());
+                }
+                self.clear_last_error();
+                return Ok(cached);
+            }
+        }
+
         let resp = self
             .client
             .post(url)
@@ -593,7 +613,15 @@ impl TtsConfig {
 
         if let Ok(mut cache) = self.cache.lock() {
             cache.apply_request_scope(request);
-            cache.insert(cache_key, speech.clone());
+            cache.insert(cache_key.clone(), speech.clone());
+        }
+
+        if let Some(persistent_cache) = &self.persistent_cache {
+            if let Err(error) = persistent_cache.prepare_request_scope(request) {
+                eprintln!("tts: failed preparing persistent cache scope after fetch: {error}");
+            } else if let Err(error) = persistent_cache.insert(&cache_key, request, &speech) {
+                eprintln!("tts: failed persisting cache entry: {error}");
+            }
         }
 
         Ok(speech)

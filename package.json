@@ -4,12 +4,16 @@
   "description": "纯JS版本的日语学习工具，支持分词和语音朗读",
   "main": "index.html",
   "scripts": {
-    "start": "cargo run --release",
-    "dev": "cargo run",
-    "serve": "cargo run --release",
-    "test": "cargo test && node --test tests/frontend/*.test.mjs"
+    "frontend:install": "npm --prefix frontend install",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:test": "npm --prefix frontend test",
+    "start": "npm run frontend:build && cargo run --release",
+    "dev": "npm run frontend:build && cargo run",
+    "serve": "npm run frontend:build && cargo run --release",
+    "test": "cargo test && npm run frontend:test && npm run frontend:build"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "jmdict-simplified-node": "^1.1.2",
     "kuromoji": "^0.1.2",
     "kuroshiro": "^1.2.0",

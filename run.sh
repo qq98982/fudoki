@@ -21,6 +21,7 @@ ensure_git_lfs() {
 
 need_cmd cargo
 need_cmd node
+need_cmd npm
 need_cmd git
 ensure_git_lfs
 mkdir -p "$RESOURCES_DIR"
@@ -38,5 +39,9 @@ if [[ ! -f "$DICT_PATH" ]]; then
 fi
 
 cd "$ROOT_DIR"
+if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]]; then
+  npm --prefix frontend install
+fi
+npm --prefix frontend run build
 cargo build
 cargo run
