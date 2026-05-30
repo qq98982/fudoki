@@ -40,16 +40,7 @@ pub struct SpeakRequest {
     pub cache_scope_version: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct ApiErrorBody {
-    pub code: String,
-    pub message: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ApiErrorResponse {
-    pub error: ApiErrorBody,
-}
+use crate::models::{ApiErrorBody, ApiErrorResponse};
 
 #[derive(Clone, Debug)]
 pub struct SynthesizedSpeech {
@@ -539,6 +530,15 @@ impl TtsConfig {
         }
 
         let cache_key = Self::build_cache_key(provider, request, model, voice, response_format, speed);
+
+        // Prepare persistent cache scope first so a failure doesn't leave
+        // the in-memory cache in an inconsistent state.
+        if let Some(persistent_cache) = &self.persistent_cache {
+            if let Err(error) = persistent_cache.prepare_request_scope(request) {
+                eprintln!("tts: failed preparing persistent cache scope: {error}");
+            }
+        }
+
         if let Ok(mut cache) = self.cache.lock() {
             cache.apply_request_scope(request);
             if let Some(cached) = cache.get(&cache_key) {
@@ -548,9 +548,7 @@ impl TtsConfig {
         }
 
         if let Some(persistent_cache) = &self.persistent_cache {
-            if let Err(error) = persistent_cache.prepare_request_scope(request) {
-                eprintln!("tts: failed preparing persistent cache scope: {error}");
-            } else if let Ok(Some(cached)) = persistent_cache.get(&cache_key) {
+            if let Ok(Some(cached)) = persistent_cache.get(&cache_key) {
                 if let Ok(mut cache) = self.cache.lock() {
                     cache.apply_request_scope(request);
                     cache.insert(cache_key.clone(), cached.clone());

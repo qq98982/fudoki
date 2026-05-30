@@ -8,6 +8,18 @@ import type {
   TitleMode,
 } from '../types'
 
+export class ApiError extends Error {
+  code: string
+  status: number
+
+  constructor(code: string, message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+    this.status = status
+  }
+}
+
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     headers: {
@@ -18,6 +30,14 @@ async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T
   })
 
   if (!response.ok) {
+    try {
+      const body = await response.json()
+      if (body?.error?.code && body?.error?.message) {
+        throw new ApiError(body.error.code, body.error.message, response.status)
+      }
+    } catch (e) {
+      if (e instanceof ApiError) throw e
+    }
     const text = await response.text()
     throw new Error(text || `Request failed: ${response.status}`)
   }
@@ -69,7 +89,7 @@ export async function updateDocument(
 
 export async function deleteDocument(id: string) {
   const response = await fetch(`/api/documents/${id}`, { method: 'DELETE' })
-  if (!response.ok && response.status !== 204) {
+  if (!response.ok) {
     const text = await response.text()
     throw new Error(text || `Delete failed: ${response.status}`)
   }

@@ -274,20 +274,22 @@ impl TtsCacheRepository {
             return Ok(());
         }
 
-        for (_, audio_path) in entries {
-            let full_path = self.cache_dir.join(audio_path);
-            if full_path.exists() {
-                fs::remove_file(&full_path).map_err(io_to_db_error)?;
-            }
-        }
-
+        // Delete DB rows first inside a transaction. Stale audio files left
+        // on disk after a crash are harmless — no DB row points to them.
         self.db.with_connection(|conn| {
             let tx = conn.unchecked_transaction()?;
             for (cache_key, _) in entries {
                 tx.execute("DELETE FROM tts_audio_cache WHERE cache_key = ?1", [cache_key])?;
             }
             tx.commit()
-        })
+        })?;
+
+        for (_, audio_path) in entries {
+            let full_path = self.cache_dir.join(audio_path);
+            let _ = fs::remove_file(&full_path);
+        }
+
+        Ok(())
     }
 }
 

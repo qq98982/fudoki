@@ -193,21 +193,52 @@ impl DocumentsRepository {
     }
 
     pub fn delete(&self, id: &str) -> rusqlite::Result<bool> {
-        let active_id = self.active_document_id()?;
-        let changed = self.db.with_connection(|conn| {
-            let affected = conn.execute(
+        let id_owned = id.to_string();
+        self.db.with_connection(|conn| {
+            let tx = conn.unchecked_transaction()?;
+
+            let affected = tx.execute(
                 "UPDATE documents SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
-                params![id, now_millis()],
+                params![&id_owned, now_millis()],
             )?;
-            Ok(affected > 0)
-        })?;
 
-        if changed && active_id.as_deref() == Some(id) {
-            let next_active = self.list()?.documents.into_iter().next().map(|doc| doc.id);
-            self.set_active_document_id(next_active)?;
-        }
+            if affected > 0 {
+                let active_id: Option<String> = tx
+                    .query_row(
+                        "SELECT value_json FROM app_meta WHERE key = 'active_document_id'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .and_then(|raw: String| serde_json::from_str(&raw).ok());
 
-        Ok(changed)
+                if active_id.as_deref() == Some(&id_owned) {
+                    let next_id: Option<String> = {
+                        let mut stmt = tx.prepare(
+                            "SELECT id FROM documents WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
+                        )?;
+                        stmt.query_row([], |row| row.get(0)).optional()?
+                    };
+
+                    match next_id {
+                        Some(next) => {
+                            tx.execute(
+                                "INSERT INTO app_meta (key, value_json) VALUES ('active_document_id', ?1) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                                params![serde_json::to_string(&next).unwrap()],
+                            )?;
+                        }
+                        None => {
+                            tx.execute("DELETE FROM app_meta WHERE key = 'active_document_id'", [])?;
+                        }
+                    }
+                }
+
+                tx.commit()?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })
     }
 
     pub fn duplicate(&self, id: &str) -> rusqlite::Result<DocumentPayload> {
@@ -286,13 +317,20 @@ impl DocumentsRepository {
 
             tx.execute("DELETE FROM settings", [])?;
             for (key, value) in &payload.settings {
+                let value_json = match serde_json::to_string(value) {
+                    Ok(json) => json,
+                    Err(err) => {
+                        eprintln!("legacy import: skipping setting {key}: {err}");
+                        continue;
+                    }
+                };
                 tx.execute(
                     r#"
                     INSERT INTO settings (key, value_json, updated_at)
                     VALUES (?1, ?2, ?3)
                     ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
                     "#,
-                    params![key, serde_json::to_string(value).unwrap(), now_millis()],
+                    params![key, value_json, now_millis()],
                 )?;
             }
 

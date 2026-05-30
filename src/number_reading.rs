@@ -170,7 +170,7 @@ fn read_under_ten_thousand(value: u16) -> String {
 
 fn digit_reading(value: u8) -> &'static str {
     match value {
-        0 => "ゼロ",
+        0 => "",
         1 => "イチ",
         2 => "ニ",
         3 => "サン",

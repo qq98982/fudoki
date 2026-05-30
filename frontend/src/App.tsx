@@ -121,17 +121,19 @@ function WorkspaceApp() {
     mutationFn: ({
       id,
       title,
+      titleMode,
       content,
       expectedRevision,
     }: {
       id: string
       title: string
+      titleMode: string
       content: string
       expectedRevision: number
     }) =>
       updateDocument(id, {
         title,
-        title_mode: 'custom',
+        title_mode: titleMode === 'auto' ? 'auto' : 'custom',
         content,
         expected_revision: expectedRevision,
       }),
@@ -404,6 +406,7 @@ function WorkspaceApp() {
     const updated = await renameMutation.mutateAsync({
       id: document.id,
       title: nextTitle,
+      titleMode: document.title_mode,
       content,
       expectedRevision,
     })

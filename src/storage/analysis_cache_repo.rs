@@ -147,11 +147,22 @@ impl AnalysisCacheRepository {
                     now,
                 ],
             )?;
-            Ok(())
-        })?;
 
-        self.prune_expired()?;
-        self.evict_lru_if_needed()
+            // Prune and evict within the same connection so counts are accurate.
+            let cutoff = now - ANALYSIS_CACHE_TTL.as_millis() as i64;
+            conn.execute("DELETE FROM analysis_cache WHERE last_used_at < ?1", [cutoff])?;
+
+            let count: i64 = conn.query_row("SELECT COUNT(*) FROM analysis_cache", [], |row| row.get(0))?;
+            if count as usize > ANALYSIS_CACHE_MAX_ENTRIES {
+                let overflow = count as usize - ANALYSIS_CACHE_MAX_ENTRIES;
+                conn.execute(
+                    "DELETE FROM analysis_cache WHERE cache_key IN (SELECT cache_key FROM analysis_cache ORDER BY last_used_at ASC LIMIT ?1)",
+                    [overflow as i64],
+                )?;
+            }
+
+            Ok(())
+        })
     }
 
     pub fn clear_all(&self) -> rusqlite::Result<()> {
@@ -161,32 +172,6 @@ impl AnalysisCacheRepository {
         })
     }
 
-    fn prune_expired(&self) -> rusqlite::Result<()> {
-        let cutoff = now_millis() - ANALYSIS_CACHE_TTL.as_millis() as i64;
-        self.db.with_connection(|conn| {
-            conn.execute("DELETE FROM analysis_cache WHERE last_used_at < ?1", [cutoff])?;
-            Ok(())
-        })
-    }
-
-    fn evict_lru_if_needed(&self) -> rusqlite::Result<()> {
-        let count = self.db.with_connection(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM analysis_cache", [], |row| row.get::<_, i64>(0))
-        })? as usize;
-
-        if count <= ANALYSIS_CACHE_MAX_ENTRIES {
-            return Ok(());
-        }
-
-        let overflow = count - ANALYSIS_CACHE_MAX_ENTRIES;
-        self.db.with_connection(|conn| {
-            conn.execute(
-                "DELETE FROM analysis_cache WHERE cache_key IN (SELECT cache_key FROM analysis_cache ORDER BY last_used_at ASC LIMIT ?1)",
-                [overflow as i64],
-            )?;
-            Ok(())
-        })
-    }
 }
 
 fn cache_key(document_id: &str, document_revision: i64, content_hash: &str) -> String {
