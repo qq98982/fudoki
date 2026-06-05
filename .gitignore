@@ -18,3 +18,5 @@ target/
 
 # Local git worktrees
 .worktrees/
+
+node_modules/
