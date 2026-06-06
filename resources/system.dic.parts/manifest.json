@@ -1,0 +1,13 @@
+{
+  "file": "resources/system.dic",
+  "size": 216976883,
+  "sha256": "0717e3d6a3c7de1bc72d3293a65a6658d9206fa97ee66bcf07ac38c067698b65",
+  "partSize": 47185920,
+  "parts": [
+    "system.dic.part.000",
+    "system.dic.part.001",
+    "system.dic.part.002",
+    "system.dic.part.003",
+    "system.dic.part.004"
+  ]
+}

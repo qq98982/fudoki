@@ -1,1 +1,1 @@
-resources/system.dic filter=lfs diff=lfs merge=lfs -text
+resources/system.dic.parts/system.dic.part.* binary

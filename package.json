@@ -4,13 +4,15 @@
   "description": "纯JS版本的日语学习工具，支持分词和语音朗读",
   "main": "index.html",
   "scripts": {
+    "prepare:system-dic": "node scripts/prepare-system-dic.mjs",
     "frontend:install": "npm --prefix frontend install",
-    "frontend:build": "npm --prefix frontend run build",
+    "frontend:build": "npm run prepare:system-dic && npm --prefix frontend run build",
     "frontend:test": "npm --prefix frontend test",
-    "start": "npm run frontend:build && cargo run --release",
-    "dev": "npm run frontend:build && cargo run",
-    "serve": "npm run frontend:build && cargo run --release",
-    "test": "cargo test && npm run frontend:test && npm run frontend:build"
+    "resources:test": "node --test tests/frontend/system-dic-parts.test.mjs",
+    "start": "npm run prepare:system-dic && npm run frontend:build && cargo run --release",
+    "dev": "npm run prepare:system-dic && npm run frontend:build && cargo run",
+    "serve": "npm run prepare:system-dic && npm run frontend:build && cargo run --release",
+    "test": "npm run resources:test && npm run frontend:test && npm run frontend:build && cargo test"
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
