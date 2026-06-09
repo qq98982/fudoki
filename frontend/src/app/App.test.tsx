@@ -560,6 +560,244 @@ test(
   10_000,
 )
 
+test('renames documents through an in-app dialog', async () => {
+  const promptMock = vi.fn()
+  vi.stubGlobal('prompt', promptMock)
+
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+
+    if (url.includes('/api/documents/doc-1') && init?.method === 'PUT') {
+      return new Response(
+        JSON.stringify({
+          document: {
+            id: 'doc-1',
+            title: 'Renamed Article',
+            title_mode: 'custom',
+            content: '本文',
+            source_kind: 'user',
+            created_at: 1,
+            updated_at: 3,
+            revision: 2,
+          },
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    if (url.includes('/api/documents/doc-1/analysis?revision=1')) {
+      return new Response(JSON.stringify({ lines: [] }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (url.includes('/api/documents')) {
+      return new Response(
+        JSON.stringify({
+          documents: [
+            {
+              id: 'doc-1',
+              title: 'First Article',
+              title_mode: 'custom',
+              content: '本文',
+              source_kind: 'user',
+              created_at: 1,
+              updated_at: 2,
+              revision: 1,
+            },
+          ],
+          active_document_id: 'doc-1',
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    if (url.includes('/api/settings')) {
+      return new Response(JSON.stringify({ values: { lang: 'en', theme: 'paper' } }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (url.includes('/api/tts/providers')) {
+      return new Response(
+        JSON.stringify({
+          default_provider: 'system',
+          providers: [{ id: 'system', status: 'available' }],
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    return new Response(JSON.stringify({}), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+
+  render(<App />)
+
+  await screen.findByText('First Article')
+  fireEvent.click(await screen.findByRole('button', { name: /rename/i }))
+
+  expect(promptMock).not.toHaveBeenCalled()
+  expect(await screen.findByRole('dialog', { name: /rename document/i })).toBeInTheDocument()
+
+  const titleInput = await screen.findByRole('textbox', { name: /document title/i })
+  fireEvent.change(titleInput, { target: { value: 'Renamed Article' } })
+  fireEvent.click(await screen.findByRole('button', { name: /^save$/i }))
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/documents/doc-1',
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.stringContaining('Renamed Article'),
+      }),
+    )
+  })
+  expect(await screen.findByText('Renamed Article')).toBeInTheDocument()
+})
+
+test('confirms document deletion through an in-app dialog', async () => {
+  const confirmMock = vi.fn()
+  vi.stubGlobal('confirm', confirmMock)
+
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+
+    if (url.includes('/api/documents/doc-1') && init?.method === 'DELETE') {
+      return new Response(null, { status: 204 })
+    }
+
+    if (url.includes('/api/documents/doc-1/analysis?revision=1')) {
+      return new Response(JSON.stringify({ lines: [] }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (url.includes('/api/documents')) {
+      return new Response(
+        JSON.stringify({
+          documents: [
+            {
+              id: 'doc-1',
+              title: 'First Article',
+              title_mode: 'auto',
+              content: '本文',
+              source_kind: 'user',
+              created_at: 1,
+              updated_at: 2,
+              revision: 1,
+            },
+          ],
+          active_document_id: 'doc-1',
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    if (url.includes('/api/settings')) {
+      return new Response(JSON.stringify({ values: { lang: 'en', theme: 'paper' } }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (url.includes('/api/tts/providers')) {
+      return new Response(
+        JSON.stringify({
+          default_provider: 'system',
+          providers: [{ id: 'system', status: 'available' }],
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    return new Response(JSON.stringify({}), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+
+  render(<App />)
+
+  await screen.findByText('First Article')
+  fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }))
+
+  expect(confirmMock).not.toHaveBeenCalled()
+  expect(await screen.findByRole('dialog', { name: /delete document/i })).toBeInTheDocument()
+
+  fireEvent.click(await screen.findByRole('button', { name: /^delete document$/i }))
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith('/api/documents/doc-1', { method: 'DELETE' })
+  })
+})
+
+test('shows operation feedback when duplicate fails', async () => {
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+
+    if (url.includes('/api/documents/doc-1/duplicate') && init?.method === 'POST') {
+      return new Response(JSON.stringify({ error: { code: 'internal_error', message: 'duplicate failed' } }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 500,
+      })
+    }
+
+    if (url.includes('/api/documents/doc-1/analysis?revision=1')) {
+      return new Response(JSON.stringify({ lines: [] }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (url.includes('/api/documents')) {
+      return new Response(
+        JSON.stringify({
+          documents: [
+            {
+              id: 'doc-1',
+              title: 'First Article',
+              title_mode: 'auto',
+              content: '本文',
+              source_kind: 'user',
+              created_at: 1,
+              updated_at: 2,
+              revision: 1,
+            },
+          ],
+          active_document_id: 'doc-1',
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    if (url.includes('/api/settings')) {
+      return new Response(JSON.stringify({ values: { lang: 'en', theme: 'paper' } }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (url.includes('/api/tts/providers')) {
+      return new Response(
+        JSON.stringify({
+          default_provider: 'system',
+          providers: [{ id: 'system', status: 'available' }],
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    return new Response(JSON.stringify({}), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+
+  render(<App />)
+
+  await screen.findByText('First Article')
+  fireEvent.click(await screen.findByRole('button', { name: /duplicate/i }))
+
+  expect(await screen.findByRole('status')).toHaveTextContent(/duplicate failed/i)
+})
+
 test('settings panel clears analysis cache after confirmation and shows success feedback', async () => {
   const confirmMock = vi.fn(() => true)
   vi.stubGlobal('confirm', confirmMock)

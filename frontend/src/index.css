@@ -457,6 +457,15 @@ button {
   gap: 8px;
 }
 
+.field input {
+  width: 100%;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-panel-strong);
+  color: var(--text-main);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+}
+
 .button-row {
   display: flex;
   gap: 10px;
@@ -482,7 +491,7 @@ button {
   position: fixed;
   right: 22px;
   bottom: 20px;
-  display: grid;
+  display: none;
   gap: 10px;
 }
 
@@ -500,6 +509,43 @@ button {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: #fff8f1;
   border-color: transparent;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(47, 36, 27, 0.26);
+  backdrop-filter: blur(6px);
+}
+
+.app-dialog {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  background: var(--bg-panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.app-dialog h2,
+.app-dialog p {
+  margin: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.danger-button {
+  background: var(--danger);
 }
 
 .sr-only {
@@ -529,8 +575,26 @@ button {
     padding: 14px;
   }
 
+  .workspace-center {
+    order: 1;
+  }
+
+  .document-rail {
+    order: 2;
+  }
+
+  .inspector-panel {
+    order: 3;
+  }
+
   .editor-pane {
-    min-height: 60vh;
+    min-height: auto;
+    padding: 14px;
+  }
+
+  .editor-input {
+    min-height: 280px;
+    padding: 18px;
   }
 
   .button-row,
@@ -540,7 +604,23 @@ button {
   }
 
   .quick-actions {
-    right: 14px;
-    bottom: 14px;
+    position: sticky;
+    display: grid;
+    order: 4;
+    bottom: 10px;
+    z-index: 10;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: var(--bg-panel);
+    backdrop-filter: blur(18px);
+  }
+
+  .quick-actions__button {
+    min-width: 0;
+    min-height: 40px;
+    box-shadow: none;
+    padding: 0 8px;
   }
 }

@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { startTransition, useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAppStore } from './app/store'
 import { AnalysisStrip } from './features/analysis/AnalysisStrip'
@@ -37,6 +37,8 @@ import type { AnalyzeResponse, DocumentRecord } from './types'
 type SaveState = 'idle' | 'saving' | 'conflict' | 'error'
 type AnalysisState = 'idle' | 'loading' | 'ready' | 'stale' | 'error'
 type PlaybackStatus = 'idle' | 'loading' | 'playing'
+type RenameDialogState = { document: DocumentRecord; title: string } | null
+type DeleteDialogState = { document: DocumentRecord } | null
 
 export default function App() {
   const [queryClient] = useState(
@@ -98,6 +100,9 @@ function WorkspaceApp() {
   const [analysisSource, setAnalysisSource] = useState<'cached' | 'fresh' | null>(null)
   const [analysisCacheStatus, setAnalysisCacheStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle')
+  const [renameDialog, setRenameDialog] = useState<RenameDialogState>(null)
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>(null)
+  const [operationMessage, setOperationMessage] = useState<string | null>(null)
 
   const savePromiseRef = useRef<Promise<void> | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -145,7 +150,7 @@ function WorkspaceApp() {
     enabled: Boolean(selectedToken?.surface),
   })
 
-  const documents = documentsQuery.data?.documents ?? []
+  const documents = useMemo(() => documentsQuery.data?.documents ?? [], [documentsQuery.data?.documents])
   const settings = settingsQuery.data?.values ?? {}
   const lang = typeof settings.lang === 'string' ? settings.lang : 'zh'
   const theme = settings.theme === 'dark' ? 'dark' : 'paper'
@@ -159,142 +164,6 @@ function WorkspaceApp() {
   const activeDocument =
     documents.find((document) => document.id === activeDocumentId) ??
     (activeDocumentId ? null : documents[0] ?? null)
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    document.documentElement.lang = lang
-  }, [lang, theme])
-
-  useEffect(() => {
-    if (documentsQuery.isLoading || bootstrappedLegacyRef.current) {
-      return
-    }
-
-    bootstrappedLegacyRef.current = true
-
-    if (documents.length > 0) {
-      return
-    }
-
-    const legacyTexts = localStorage.getItem('texts')
-    if (!legacyTexts) {
-      return
-    }
-
-    let parsedDocuments: Array<Record<string, unknown>> = []
-    try {
-      parsedDocuments = JSON.parse(legacyTexts) as Array<Record<string, unknown>>
-    } catch {
-      return
-    }
-
-    if (!Array.isArray(parsedDocuments) || parsedDocuments.length === 0) {
-      return
-    }
-
-    void importLegacyBrowserData({
-      documents: parsedDocuments
-        .filter((document) => typeof document.id === 'string')
-        .map((document) => ({
-          id: String(document.id),
-          content:
-            typeof document.content === 'string' || Array.isArray(document.content)
-              ? (document.content as string | string[])
-              : '',
-          createdAt: typeof document.createdAt === 'number' ? document.createdAt : undefined,
-          updatedAt: typeof document.updatedAt === 'number' ? document.updatedAt : undefined,
-        })),
-      activeId: localStorage.getItem('activeId'),
-      settings: {
-        ...(localStorage.getItem('theme') ? { theme: localStorage.getItem('theme') } : {}),
-        ...(localStorage.getItem('lang') ? { lang: localStorage.getItem('lang') } : {}),
-        ...(localStorage.getItem('showKana')
-          ? { showKana: localStorage.getItem('showKana') === 'true' }
-          : {}),
-        ...(localStorage.getItem('showPos')
-          ? { showPos: localStorage.getItem('showPos') === 'true' }
-          : {}),
-        ...(localStorage.getItem('ttsProvider')
-          ? { ttsProvider: localStorage.getItem('ttsProvider') }
-          : {}),
-      },
-    }).then(async () => {
-      await Promise.all([documentsQuery.refetch(), settingsQuery.refetch()])
-    })
-  }, [documents.length, documentsQuery, settingsQuery])
-
-  useEffect(() => {
-    if (documents.length === 0) {
-      if (activeDocumentId !== null) {
-        setActiveDocumentId(null)
-      }
-      return
-    }
-
-    const desiredActiveId = activeDocumentId ?? documentsQuery.data?.active_document_id ?? documents[0]?.id ?? null
-    if (desiredActiveId !== activeDocumentId) {
-      startTransition(() => {
-        setActiveDocumentId(desiredActiveId)
-      })
-    }
-  }, [activeDocumentId, documents, documentsQuery.data?.active_document_id, setActiveDocumentId])
-
-  useEffect(() => {
-    if (!activeDocument) {
-      syncedDocumentIdRef.current = null
-      setDraft('')
-      setDraftRevision(0)
-      setAnalysis(null)
-      setAnalysisState('idle')
-      setAnalysisSource(null)
-      return
-    }
-
-    if (syncedDocumentIdRef.current !== activeDocument.id) {
-      syncedDocumentIdRef.current = activeDocument.id
-      suppressNextAutoAnalyzeRef.current = true
-      setDraft(activeDocument.content)
-      setDraftRevision(activeDocument.revision)
-      setSaveState('idle')
-      setAnalysis(null)
-      setAnalysisState(activeDocument.content.trim() ? 'loading' : 'idle')
-      setAnalysisSource(null)
-      void loadCachedAnalysis(activeDocument.id, activeDocument.revision, activeDocument.content)
-    }
-  }, [activeDocument, setActiveDocumentId])
-
-  useEffect(() => {
-    if (!activeDocument) {
-      return
-    }
-
-    if (suppressNextAutoAnalyzeRef.current) {
-      suppressNextAutoAnalyzeRef.current = false
-      return
-    }
-
-    if (!draft.trim()) {
-      setAnalysis(null)
-      setAnalysisState('idle')
-      setAnalysisSource(null)
-      lastAnalyzedTextRef.current = ''
-      lastAnalyzedSignatureRef.current = ''
-      return
-    }
-
-    const currentSignature = computeStructureSignature(draft)
-    if (currentSignature === lastAnalyzedSignatureRef.current) {
-      return
-    }
-
-    lastAnalyzedSignatureRef.current = currentSignature
-    setAnalysisState((current) => (current === 'ready' ? 'stale' : 'loading'))
-    const timer = window.setTimeout(() => {
-      void handleAnalyzeInternal('auto')
-    }, 1200)
-
-    return () => window.clearTimeout(timer)
-  }, [activeDocument, draft])
 
   async function persistDraft() {
     if (!activeDocument) {
@@ -346,28 +215,6 @@ function WorkspaceApp() {
     return savePromise
   }
 
-  useEffect(() => {
-    if (!activeDocument) {
-      return
-    }
-
-    if (draft === activeDocument.content) {
-      return
-    }
-
-    const timer = window.setTimeout(() => {
-      void persistDraft()
-    }, 700)
-
-    return () => window.clearTimeout(timer)
-  }, [activeDocument, draft, draftRevision])
-
-  useEffect(() => {
-    return () => {
-      stopPlayback()
-    }
-  }, [])
-
   async function handleCreateDocument() {
     await persistDraft()
     const created = await createDocument({ content: '', title_mode: 'auto' })
@@ -395,28 +242,47 @@ function WorkspaceApp() {
     })
   }
 
-  async function handleRenameDocument(document: DocumentRecord) {
-    const nextTitle = window.prompt('Rename document', document.title)
-    if (!nextTitle) {
+  function showOperationMessage(message: string) {
+    setOperationMessage(message)
+  }
+
+  function requestRenameDocument(document: DocumentRecord) {
+    setRenameDialog({ document, title: document.title })
+  }
+
+  async function confirmRenameDocument() {
+    if (!renameDialog) {
       return
     }
 
-    const content = document.id === activeDocumentId ? draft : document.content
-    const expectedRevision = document.id === activeDocumentId ? draftRevision : document.revision
-    const updated = await renameMutation.mutateAsync({
-      id: document.id,
-      title: nextTitle,
-      titleMode: document.title_mode,
-      content,
-      expectedRevision,
-    })
+    const document = renameDialog.document
+    const nextTitle = renameDialog.title.trim()
+    if (!nextTitle) {
+      showOperationMessage(t(lang, 'renameTitleRequired'))
+      return
+    }
 
-    queryClient.setQueryData(['documents'], (current: DocumentsLike) =>
-      updateDocumentsCache(current, updated.document),
-    )
+    try {
+      const content = document.id === activeDocumentId ? draft : document.content
+      const expectedRevision = document.id === activeDocumentId ? draftRevision : document.revision
+      const updated = await renameMutation.mutateAsync({
+        id: document.id,
+        title: nextTitle,
+        titleMode: 'custom',
+        content,
+        expectedRevision,
+      })
 
-    if (document.id === activeDocumentId) {
-      setDraftRevision(updated.document.revision)
+      queryClient.setQueryData(['documents'], (current: DocumentsLike) =>
+        updateDocumentsCache(current, updated.document),
+      )
+
+      if (document.id === activeDocumentId) {
+        setDraftRevision(updated.document.revision)
+      }
+      setRenameDialog(null)
+    } catch {
+      showOperationMessage(t(lang, 'renameFailed'))
     }
   }
 
@@ -436,30 +302,40 @@ function WorkspaceApp() {
         setInspectorTab('analysis')
       })
     } catch {
-      // Silently ignore duplicate failures.
+      showOperationMessage(t(lang, 'duplicateFailed'))
     }
   }
 
-  async function handleDeleteDocument(document: DocumentRecord) {
-    if (!window.confirm(`Delete "${document.title}"?`)) {
+  function requestDeleteDocument(document: DocumentRecord) {
+    setDeleteDialog({ document })
+  }
+
+  async function confirmDeleteDocument() {
+    if (!deleteDialog) {
       return
     }
 
-    await deleteDocumentRequest(document.id)
-    queryClient.setQueryData(['documents'], (current: DocumentsLike) => {
-      const currentValue = ensureDocumentsShape(current)
-      const nextDocuments = currentValue.documents.filter((item) => item.id !== document.id)
-      return {
-        documents: nextDocuments,
-        active_document_id:
-          currentValue.active_document_id === document.id
-            ? nextDocuments[0]?.id ?? null
-            : currentValue.active_document_id,
-      }
-    })
+    const document = deleteDialog.document
+    try {
+      await deleteDocumentRequest(document.id)
+      queryClient.setQueryData(['documents'], (current: DocumentsLike) => {
+        const currentValue = ensureDocumentsShape(current)
+        const nextDocuments = currentValue.documents.filter((item) => item.id !== document.id)
+        return {
+          documents: nextDocuments,
+          active_document_id:
+            currentValue.active_document_id === document.id
+              ? nextDocuments[0]?.id ?? null
+              : currentValue.active_document_id,
+        }
+      })
 
-    if (document.id === activeDocumentId) {
-      setActiveDocumentId(null)
+      if (document.id === activeDocumentId) {
+        setActiveDocumentId(null)
+      }
+      setDeleteDialog(null)
+    } catch {
+      showOperationMessage(t(lang, 'deleteFailed'))
     }
   }
 
@@ -814,6 +690,179 @@ function WorkspaceApp() {
     settingsMutation.mutate({ [key]: value })
   }
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.lang = lang
+  }, [lang, theme])
+
+  useEffect(() => {
+    if (documentsQuery.isLoading || bootstrappedLegacyRef.current) {
+      return
+    }
+
+    bootstrappedLegacyRef.current = true
+
+    if (documents.length > 0) {
+      return
+    }
+
+    const legacyTexts = localStorage.getItem('texts')
+    if (!legacyTexts) {
+      return
+    }
+
+    let parsedDocuments: Array<Record<string, unknown>> = []
+    try {
+      parsedDocuments = JSON.parse(legacyTexts) as Array<Record<string, unknown>>
+    } catch {
+      return
+    }
+
+    if (!Array.isArray(parsedDocuments) || parsedDocuments.length === 0) {
+      return
+    }
+
+    void importLegacyBrowserData({
+      documents: parsedDocuments
+        .filter((document) => typeof document.id === 'string')
+        .map((document) => ({
+          id: String(document.id),
+          content:
+            typeof document.content === 'string' || Array.isArray(document.content)
+              ? (document.content as string | string[])
+              : '',
+          createdAt: typeof document.createdAt === 'number' ? document.createdAt : undefined,
+          updatedAt: typeof document.updatedAt === 'number' ? document.updatedAt : undefined,
+        })),
+      activeId: localStorage.getItem('activeId'),
+      settings: {
+        ...(localStorage.getItem('theme') ? { theme: localStorage.getItem('theme') } : {}),
+        ...(localStorage.getItem('lang') ? { lang: localStorage.getItem('lang') } : {}),
+        ...(localStorage.getItem('showKana')
+          ? { showKana: localStorage.getItem('showKana') === 'true' }
+          : {}),
+        ...(localStorage.getItem('showPos')
+          ? { showPos: localStorage.getItem('showPos') === 'true' }
+          : {}),
+        ...(localStorage.getItem('ttsProvider')
+          ? { ttsProvider: localStorage.getItem('ttsProvider') }
+          : {}),
+      },
+    }).then(async () => {
+      await Promise.all([documentsQuery.refetch(), settingsQuery.refetch()])
+    })
+  }, [documents.length, documentsQuery, settingsQuery])
+
+  useEffect(() => {
+    if (documents.length === 0) {
+      if (activeDocumentId !== null) {
+        setActiveDocumentId(null)
+      }
+      return
+    }
+
+    const desiredActiveId = activeDocumentId ?? documentsQuery.data?.active_document_id ?? documents[0]?.id ?? null
+    if (desiredActiveId !== activeDocumentId) {
+      startTransition(() => {
+        setActiveDocumentId(desiredActiveId)
+      })
+    }
+  }, [activeDocumentId, documents, documentsQuery.data?.active_document_id, setActiveDocumentId])
+
+  useEffect(() => {
+    if (!activeDocument) {
+      syncedDocumentIdRef.current = null
+      startTransition(() => {
+        setDraft('')
+        setDraftRevision(0)
+        setAnalysis(null)
+        setAnalysisState('idle')
+        setAnalysisSource(null)
+      })
+      return
+    }
+
+    if (syncedDocumentIdRef.current !== activeDocument.id) {
+      syncedDocumentIdRef.current = activeDocument.id
+      suppressNextAutoAnalyzeRef.current = true
+      startTransition(() => {
+        setDraft(activeDocument.content)
+        setDraftRevision(activeDocument.revision)
+        setSaveState('idle')
+        setAnalysis(null)
+        setAnalysisState(activeDocument.content.trim() ? 'loading' : 'idle')
+        setAnalysisSource(null)
+      })
+      const documentId = activeDocument.id
+      const documentRevision = activeDocument.revision
+      const documentContent = activeDocument.content
+      queueMicrotask(() => {
+        if (syncedDocumentIdRef.current === documentId) {
+          void loadCachedAnalysis(documentId, documentRevision, documentContent)
+        }
+      })
+    }
+  }, [activeDocument, setActiveDocumentId])
+
+  useEffect(() => {
+    if (!activeDocument) {
+      return
+    }
+
+    if (suppressNextAutoAnalyzeRef.current) {
+      suppressNextAutoAnalyzeRef.current = false
+      return
+    }
+
+    if (!draft.trim()) {
+      startTransition(() => {
+        setAnalysis(null)
+        setAnalysisState('idle')
+        setAnalysisSource(null)
+      })
+      lastAnalyzedTextRef.current = ''
+      lastAnalyzedSignatureRef.current = ''
+      return
+    }
+
+    const currentSignature = computeStructureSignature(draft)
+    if (currentSignature === lastAnalyzedSignatureRef.current) {
+      return
+    }
+
+    lastAnalyzedSignatureRef.current = currentSignature
+    startTransition(() => {
+      setAnalysisState((current) => (current === 'ready' ? 'stale' : 'loading'))
+    })
+    const timer = window.setTimeout(() => {
+      void handleAnalyzeInternal('auto')
+    }, 1200)
+
+    return () => window.clearTimeout(timer)
+  }, [activeDocument, draft])
+
+  useEffect(() => {
+    if (!activeDocument) {
+      return
+    }
+
+    if (draft === activeDocument.content) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void persistDraft()
+    }, 700)
+
+    return () => window.clearTimeout(timer)
+  }, [activeDocument, draft, draftRevision])
+
+  useEffect(() => {
+    return () => {
+      stopPlayback()
+    }
+  }, [])
+
   return (
     <main className="workspace-shell">
       <DocumentRail
@@ -824,13 +873,13 @@ function WorkspaceApp() {
           void handleCreateDocument()
         }}
         onDelete={(document) => {
-          void handleDeleteDocument(document)
+          requestDeleteDocument(document)
         }}
         onDuplicate={(document) => {
           void handleDuplicateDocument(document)
         }}
         onRename={(document) => {
-          void handleRenameDocument(document)
+          requestRenameDocument(document)
         }}
         onSearchChange={setSearch}
         onSelect={(id) => {
@@ -900,6 +949,11 @@ function WorkspaceApp() {
       {healthQuery.isError ? <div className="status-toast status-toast--error">{t(lang, 'backendUnavailable')}</div> : null}
       {documentsQuery.isLoading ? <div className="status-toast">{t(lang, 'loading')}</div> : null}
       {playbackStatus !== 'idle' ? <div className="status-toast floating">TTS active</div> : null}
+      {operationMessage ? (
+        <div className="status-toast status-toast--error" role="status">
+          {operationMessage}
+        </div>
+      ) : null}
 
       <div className="quick-actions" aria-label="Quick actions">
         <button
@@ -943,6 +997,60 @@ function WorkspaceApp() {
           TTS
         </button>
       </div>
+
+      {renameDialog ? (
+        <div className="modal-backdrop">
+          <form
+            aria-label={t(lang, 'renameDocument')}
+            className="app-dialog"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void confirmRenameDocument()
+            }}
+            role="dialog"
+          >
+            <h2>{t(lang, 'renameDocument')}</h2>
+            <label className="field">
+              <span>{t(lang, 'documentTitle')}</span>
+              <input
+                autoFocus
+                aria-label={t(lang, 'documentTitle')}
+                onChange={(event) =>
+                  setRenameDialog((current) =>
+                    current ? { ...current, title: event.target.value } : current,
+                  )
+                }
+                value={renameDialog.title}
+              />
+            </label>
+            <div className="dialog-actions">
+              <button className="secondary-button" onClick={() => setRenameDialog(null)} type="button">
+                {t(lang, 'cancel')}
+              </button>
+              <button className="primary-button" type="submit">
+                {t(lang, 'save')}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {deleteDialog ? (
+        <div className="modal-backdrop">
+          <section aria-label={t(lang, 'deleteDocument')} className="app-dialog" role="dialog">
+            <h2>{t(lang, 'deleteDocument')}</h2>
+            <p className="muted">{t(lang, 'deleteDocumentConfirm').replace('{title}', deleteDialog.document.title)}</p>
+            <div className="dialog-actions">
+              <button className="secondary-button" onClick={() => setDeleteDialog(null)} type="button">
+                {t(lang, 'cancel')}
+              </button>
+              <button className="primary-button danger-button" onClick={() => void confirmDeleteDocument()} type="button">
+                {t(lang, 'deleteDocument')}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }

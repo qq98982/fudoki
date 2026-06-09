@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::{
     extract::{Path, Query, State},
@@ -19,8 +19,8 @@ use crate::models::{
     DocumentEnvelope, DocumentListResponse, LegacyBrowserDataRequest, MigrationResponse,
     SettingsResponse, UpdateDocumentRequest, UpdateSettingsRequest,
 };
-use crate::storage::db::AppDatabase;
 use crate::storage::analysis_cache_repo::AnalysisCacheRepository;
+use crate::storage::db::AppDatabase;
 use crate::storage::documents_repo::{DocumentsRepository, UpdateDocumentError};
 use crate::storage::settings_repo::SettingsRepository;
 use crate::tts::{SpeakRequest, TtsConfig, TtsProvidersResponse};
@@ -62,11 +62,14 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 
 async fn index() -> impl IntoResponse {
     let index_path = frontend_dist_path("index.html");
-    let fallback_path = PathBuf::from("index.html");
-    let html = std::fs::read_to_string(&index_path)
-        .or_else(|_| std::fs::read_to_string(&fallback_path))
-        .expect("read frontend index");
-    Html(html)
+    match std::fs::read_to_string(&index_path) {
+        Ok(html) => Html(html).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("frontend build missing: {error}"),
+        )
+            .into_response(),
+    }
 }
 
 async fn login() -> impl IntoResponse {
@@ -80,9 +83,10 @@ async fn analyze(
     if let (Some(document_id), Some(document_revision)) =
         (payload.document_id.as_deref(), payload.document_revision)
     {
-        if let Ok(Some(cached)) = state
-            .analysis_cache
-            .get_cached(document_id, document_revision, &payload.text)
+        if let Ok(Some(cached)) =
+            state
+                .analysis_cache
+                .get_cached(document_id, document_revision, &payload.text)
         {
             return Json(cached);
         }
@@ -90,9 +94,10 @@ async fn analyze(
         let response = AnalyzeResponse {
             lines: state.analyzer.analyze(&payload.text),
         };
-        let _ = state
-            .analysis_cache
-            .store(document_id, document_revision, &payload.text, &response);
+        let _ =
+            state
+                .analysis_cache
+                .store(document_id, document_revision, &payload.text, &response);
         return Json(response);
     }
 
@@ -117,10 +122,7 @@ async fn cached_analysis(
 async fn clear_analysis_cache(
     State(state): State<AppState>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiErrorResponse>)> {
-    state
-        .analysis_cache
-        .clear_all()
-        .map_err(internal_error)?;
+    state.analysis_cache.clear_all().map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -168,7 +170,10 @@ async fn update_document(
     Path(id): Path<String>,
     Json(payload): Json<UpdateDocumentRequest>,
 ) -> Result<Json<DocumentEnvelope>, (StatusCode, Json<ApiErrorResponse>)> {
-    let document = state.documents.update(&id, payload).map_err(document_update_error)?;
+    let document = state
+        .documents
+        .update(&id, payload)
+        .map_err(document_update_error)?;
     Ok(Json(DocumentEnvelope { document }))
 }
 
@@ -209,7 +214,11 @@ async fn update_settings(
     State(state): State<AppState>,
     Json(payload): Json<UpdateSettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, Json<ApiErrorResponse>)> {
-    state.settings.update(payload).map(Json).map_err(internal_error)
+    state
+        .settings
+        .update(payload)
+        .map(Json)
+        .map_err(internal_error)
 }
 
 async fn import_legacy_browser_data(
@@ -248,13 +257,22 @@ fn build_router_with_tts_config_and_database(tts: TtsConfig, db: AppDatabase) ->
     Router::new()
         .route("/", get(index))
         .route("/login.html", get(login))
-        .route_service("/favicon.svg", ServeFile::new(frontend_dist_path("favicon.svg")))
+        .route_service(
+            "/favicon.svg",
+            ServeFile::new(frontend_dist_path("favicon.svg")),
+        )
         .route("/api/health", get(health))
         .route("/api/analyze", post(analyze))
-        .route("/api/analysis-cache", axum::routing::delete(clear_analysis_cache))
+        .route(
+            "/api/analysis-cache",
+            axum::routing::delete(clear_analysis_cache),
+        )
         .route("/api/dictionary", get(dictionary_lookup))
         .route("/api/documents", get(list_documents).post(create_document))
-        .route("/api/documents/{id}", put(update_document).delete(delete_document))
+        .route(
+            "/api/documents/{id}",
+            put(update_document).delete(delete_document),
+        )
         .route("/api/documents/{id}/duplicate", post(duplicate_document))
         .route("/api/documents/{id}/analysis", get(cached_analysis))
         .route("/api/settings", get(get_settings).put(update_settings))
@@ -298,9 +316,7 @@ fn not_found(code: &str, message: &str) -> (StatusCode, Json<ApiErrorResponse>) 
     )
 }
 
-fn document_update_error(
-    error: UpdateDocumentError,
-) -> (StatusCode, Json<ApiErrorResponse>) {
+fn document_update_error(error: UpdateDocumentError) -> (StatusCode, Json<ApiErrorResponse>) {
     match error {
         UpdateDocumentError::NotFound => not_found("document_not_found", "Document not found"),
         UpdateDocumentError::Conflict => (
