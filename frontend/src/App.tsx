@@ -40,6 +40,8 @@ type PlaybackStatus = 'idle' | 'loading' | 'playing'
 type RenameDialogState = { document: DocumentRecord; title: string } | null
 type DeleteDialogState = { document: DocumentRecord } | null
 
+const REMOTE_SYNTHESIS_SPEED = 1
+
 export default function App() {
   const [queryClient] = useState(
     () =>
@@ -100,6 +102,7 @@ function WorkspaceApp() {
   const [analysisSource, setAnalysisSource] = useState<'cached' | 'fresh' | null>(null)
   const [analysisCacheStatus, setAnalysisCacheStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle')
+  const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [renameDialog, setRenameDialog] = useState<RenameDialogState>(null)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>(null)
   const [operationMessage, setOperationMessage] = useState<string | null>(null)
@@ -109,6 +112,7 @@ function WorkspaceApp() {
   const currentAudioUrlRef = useRef<string | null>(null)
   const playbackSessionRef = useRef(0)
   const playbackControllerRef = useRef<{ stop: () => void } | null>(null)
+  const playbackSpeedRef = useRef(1)
   const bootstrappedLegacyRef = useRef(false)
   const syncedDocumentIdRef = useRef<string | null>(null)
   const suppressNextAutoAnalyzeRef = useRef(false)
@@ -156,6 +160,7 @@ function WorkspaceApp() {
   const theme = settings.theme === 'dark' ? 'dark' : 'paper'
   const showKana = settings.showKana !== false
   const showPos = settings.showPos !== false
+  const settingsPlaybackSpeed = normalizePlaybackSpeed(settings.ttsPlaybackSpeed)
   const currentProviderId =
     typeof settings.ttsProvider === 'string'
       ? settings.ttsProvider
@@ -450,7 +455,7 @@ function WorkspaceApp() {
 
     if (currentProviderId === 'system') {
       playbackControllerRef.current = { stop: () => stopSystemSpeech() }
-      speakWithSystemSpeech(text, 1, {
+      speakWithSystemSpeech(text, playbackSpeedRef.current, {
         onStart: () => {
           if (sessionId !== playbackSessionRef.current) return
           setPlaybackStatus('playing')
@@ -474,7 +479,7 @@ function WorkspaceApp() {
       model: provider?.defaults?.model,
       voice: provider?.defaults?.voice,
       format: provider?.defaults?.format,
-      speed: 1,
+      speed: REMOTE_SYNTHESIS_SPEED,
       document_id: activeDocument?.id,
       document_revision: draftRevision || undefined,
       cache_scope_version: computeCacheScopeVersion(currentProviderId, providersQuery.data?.providers),
@@ -493,6 +498,7 @@ function WorkspaceApp() {
 
     currentAudioUrlRef.current = url
     const audio = new Audio(url)
+    applyAudioPlaybackSpeed(audio)
     audioRef.current = audio
     playbackControllerRef.current = {
       stop: () => {
@@ -550,7 +556,7 @@ function WorkspaceApp() {
         model: provider?.defaults?.model,
         voice: provider?.defaults?.voice,
         format: provider?.defaults?.format,
-        speed: 1,
+        speed: REMOTE_SYNTHESIS_SPEED,
         document_id: activeDocument?.id,
         document_revision: draftRevision || undefined,
         cache_scope_version: computeCacheScopeVersion(currentProviderId, providersQuery.data?.providers),
@@ -586,6 +592,7 @@ function WorkspaceApp() {
   async function playRemoteAudioSegment(url: string, sessionId: number): Promise<'ended' | 'stopped'> {
     currentAudioUrlRef.current = url
     const audio = new Audio(url)
+    applyAudioPlaybackSpeed(audio)
     audioRef.current = audio
     return await new Promise<'ended' | 'stopped'>((resolve, reject) => {
       let settled = false
@@ -661,6 +668,12 @@ function WorkspaceApp() {
     }
   }
 
+  function applyAudioPlaybackSpeed(audio: HTMLAudioElement) {
+    const speed = playbackSpeedRef.current
+    audio.defaultPlaybackRate = speed
+    audio.playbackRate = speed
+  }
+
   function stopPlayback() {
     playbackSessionRef.current += 1
     playbackControllerRef.current?.stop()
@@ -690,10 +703,27 @@ function WorkspaceApp() {
     settingsMutation.mutate({ [key]: value })
   }
 
+  function updatePlaybackSpeed(value: number) {
+    const nextSpeed = normalizePlaybackSpeed(value)
+    setPlaybackSpeed(nextSpeed)
+    updateSetting('ttsPlaybackSpeed', nextSpeed)
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     document.documentElement.lang = lang
   }, [lang, theme])
+
+  useEffect(() => {
+    setPlaybackSpeed(settingsPlaybackSpeed)
+  }, [settingsPlaybackSpeed])
+
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed
+    if (audioRef.current) {
+      applyAudioPlaybackSpeed(audioRef.current)
+    }
+  }, [playbackSpeed])
 
   useEffect(() => {
     if (documentsQuery.isLoading || bootstrappedLegacyRef.current) {
@@ -933,12 +963,14 @@ function WorkspaceApp() {
         onPlay={() => {
           void handlePlay()
         }}
+        onPlaybackSpeedChange={updatePlaybackSpeed}
         onProviderChange={(value) => updateSetting('ttsProvider', value)}
         onStop={stopPlayback}
         onTabChange={setInspectorTab}
         onThemeChange={(value) => updateSetting('theme', value)}
         onToggleSetting={(key, value) => updateSetting(key, value)}
         providers={providersQuery.data}
+        playbackSpeed={playbackSpeed}
         selectedToken={selectedToken}
         showKana={showKana}
         showPos={showPos}
@@ -1096,4 +1128,12 @@ function computeCacheScopeVersion(
   const voice = provider?.defaults?.voice ?? ''
   const format = provider?.defaults?.format ?? ''
   return `${currentProviderId}:${model}:${voice}:${format}`
+}
+
+function normalizePlaybackSpeed(value: unknown) {
+  const speed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(speed)) {
+    return 1
+  }
+  return Math.round(Math.min(2, Math.max(0.5, speed)) * 10) / 10
 }

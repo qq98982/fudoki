@@ -44,4 +44,7 @@ if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]]; then
 fi
 npm --prefix frontend run build
 cargo build
+echo
+echo "Fudoki is starting. Open http://127.0.0.1:8000 in your browser."
+echo
 cargo run

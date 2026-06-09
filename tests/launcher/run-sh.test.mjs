@@ -8,6 +8,7 @@ test("run.sh pulls git lfs assets and starts Rust app", () => {
   assert.match(source, /resources\/system\.dic/);
   assert.match(source, /git lfs pull/);
   assert.match(source, /cargo build/);
+  assert.match(source, /http:\/\/127\.0\.0\.1:8000/);
   assert.match(source, /cargo run/);
   assert.doesNotMatch(source, /api\.github\.com\/repos\/WorksApplications\/SudachiDict\/releases\/latest/);
 });

@@ -466,6 +466,24 @@ button {
   padding: 0.9rem 1rem;
 }
 
+.speed-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 12px;
+}
+
+.speed-control input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.speed-control__value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .button-row {
   display: flex;
   gap: 10px;

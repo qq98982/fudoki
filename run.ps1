@@ -51,4 +51,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "frontend build failed."
 }
 cargo build
+Write-Host ""
+Write-Host "Fudoki is starting. Open http://127.0.0.1:8000 in your browser."
+Write-Host ""
 cargo run

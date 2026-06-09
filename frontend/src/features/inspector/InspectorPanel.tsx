@@ -17,6 +17,7 @@ interface InspectorPanelProps {
   dictionaryEntry: DictionaryEntry | null
   providers: TtsProvidersResponse | undefined
   currentProviderId: string
+  playbackSpeed: number
   showKana: boolean
   showPos: boolean
   theme: string
@@ -24,6 +25,7 @@ interface InspectorPanelProps {
   onTabChange: (tab: InspectorTab) => void
   onPlay: () => void
   onStop: () => void
+  onPlaybackSpeedChange: (value: number) => void
   onProviderChange: (value: string) => void
   onThemeChange: (value: string) => void
   onLanguageChange: (value: string) => void
@@ -44,6 +46,7 @@ export function InspectorPanel(props: InspectorPanelProps) {
     dictionaryEntry,
     providers,
     currentProviderId,
+    playbackSpeed,
     showKana,
     showPos,
     theme,
@@ -51,6 +54,7 @@ export function InspectorPanel(props: InspectorPanelProps) {
     onTabChange,
     onPlay,
     onStop,
+    onPlaybackSpeedChange,
     onProviderChange,
     onThemeChange,
     onLanguageChange,
@@ -136,6 +140,23 @@ export function InspectorPanel(props: InspectorPanelProps) {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="field speed-field">
+            <span>{t(lang, 'playbackSpeed')}</span>
+            <div className="speed-control">
+              <input
+                aria-label={t(lang, 'playbackSpeed')}
+                max="2"
+                min="0.5"
+                onChange={(event) => onPlaybackSpeedChange(Number(event.target.value))}
+                step="0.1"
+                type="range"
+                value={playbackSpeed}
+              />
+              <span className="speed-control__value" aria-hidden="true">
+                {playbackSpeed.toFixed(1)}x
+              </span>
+            </div>
           </label>
           <div className="button-row">
             <button className="primary-button" onClick={onPlay} type="button">

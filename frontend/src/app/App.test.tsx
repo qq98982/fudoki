@@ -560,6 +560,156 @@ test(
   10_000,
 )
 
+test(
+  'remote generated audio playback speed updates the current audio element while playing',
+  async () => {
+    const ttsBodies: string[] = []
+    const audioInstances: FakeAudio[] = []
+    let settingsValues: Record<string, unknown> = {
+      lang: 'en',
+      theme: 'paper',
+      ttsProvider: 'openai-compatible',
+      ttsPlaybackSpeed: 1,
+    }
+
+    class FakeAudio {
+      src = ''
+      playbackRate = 1
+      defaultPlaybackRate = 1
+      onended: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor() {
+        audioInstances.push(this)
+      }
+
+      async play() {
+        return Promise.resolve()
+      }
+
+      pause() {}
+    }
+
+    vi.stubGlobal('Audio', FakeAudio)
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:test-audio'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+
+      if (url.includes('/api/documents/doc-1/analysis?revision=1')) {
+        return new Response(JSON.stringify({ lines: [] }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (url.includes('/api/documents')) {
+        return new Response(
+          JSON.stringify({
+            documents: [
+              {
+                id: 'doc-1',
+                title: 'First Article',
+                title_mode: 'auto',
+                content: '生成済み音声を再生します。',
+                source_kind: 'user',
+                created_at: 1,
+                updated_at: 2,
+                revision: 1,
+              },
+            ],
+            active_document_id: 'doc-1',
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (url.includes('/api/settings') && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body)) as { values: Record<string, unknown> }
+        settingsValues = { ...settingsValues, ...body.values }
+        return new Response(JSON.stringify({ values: settingsValues }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (url.includes('/api/settings')) {
+        return new Response(JSON.stringify({ values: settingsValues }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (url.includes('/api/tts/providers')) {
+        return new Response(
+          JSON.stringify({
+            default_provider: 'openai-compatible',
+            providers: [
+              { id: 'system', status: 'available' },
+              {
+                id: 'openai-compatible',
+                status: 'available',
+                defaults: { model: 'gpt-4o-mini-tts', voice: 'alloy', format: 'mp3' },
+                options: { models: ['gpt-4o-mini-tts'], voices: ['alloy'] },
+              },
+            ],
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (url.endsWith('/api/tts/speak') && init?.method === 'POST') {
+        ttsBodies.push(String(init.body))
+        return new Response(new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' }), {
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      }
+
+      return new Response(JSON.stringify({}), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    render(<App />)
+
+    await screen.findByText('First Article')
+    fireEvent.click(await screen.findByRole('button', { name: /quick open tts/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Play document$/i }))
+
+    await waitFor(() => {
+      expect(audioInstances).toHaveLength(1)
+    })
+    expect(audioInstances[0].playbackRate).toBe(1)
+
+    fireEvent.change(await screen.findByRole('slider', { name: /playback speed/i }), {
+      target: { value: '1.6' },
+    })
+
+    await waitFor(() => {
+      expect(audioInstances[0].playbackRate).toBe(1.6)
+    })
+    expect(audioInstances[0].defaultPlaybackRate).toBe(1.6)
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/settings',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ values: { ttsPlaybackSpeed: 1.6 } }),
+        }),
+      )
+    })
+
+    expect(ttsBodies).toHaveLength(1)
+    expect(JSON.parse(ttsBodies[0])).toEqual(
+      expect.objectContaining({
+        speed: 1,
+      }),
+    )
+  },
+  10_000,
+)
+
 test('renames documents through an in-app dialog', async () => {
   const promptMock = vi.fn()
   vi.stubGlobal('prompt', promptMock)
