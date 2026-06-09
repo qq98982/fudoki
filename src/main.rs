@@ -1,11 +1,13 @@
-use fudoki_backend::app::build_router;
+use fudoki_backend::{app::build_router, server::bind_addr_from_env};
 
 #[tokio::main]
 async fn main() {
     let _ = dotenvy::dotenv();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8000")
+    let bind_addr = bind_addr_from_env();
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .expect("bind listener");
+    println!("Fudoki is listening on http://{bind_addr}");
 
     let server = axum::serve(listener, build_router());
 

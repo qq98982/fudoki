@@ -5,5 +5,6 @@ pub mod english;
 pub mod models;
 pub mod number_reading;
 pub mod reading_normalization;
+pub mod server;
 pub mod storage;
 pub mod tts;

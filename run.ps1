@@ -18,6 +18,27 @@ function Require-GitLfs {
     }
 }
 
+function Get-DotenvValue {
+    param([string]$Name)
+
+    $EnvPath = Join-Path $RootDir ".env"
+    if (-not (Test-Path $EnvPath)) {
+        return $null
+    }
+
+    $Pattern = "^\s*" + [regex]::Escape($Name) + "\s*=\s*(.*)\s*$"
+    foreach ($Line in Get-Content $EnvPath) {
+        if ($Line -match "^\s*#") {
+            continue
+        }
+        if ($Line -match $Pattern) {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+
+    return $null
+}
+
 Require-Command cargo
 Require-Command node
 Require-Command npm
@@ -51,7 +72,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "frontend build failed."
 }
 cargo build
+$BindAddr = if ($env:FUDOKI_BIND_ADDR) { $env:FUDOKI_BIND_ADDR } else { Get-DotenvValue "FUDOKI_BIND_ADDR" }
+if (-not $BindAddr) {
+    $BindAddr = "127.0.0.1:8000"
+}
 Write-Host ""
-Write-Host "Fudoki is starting. Open http://127.0.0.1:8000 in your browser."
+Write-Host "Fudoki is starting. Open http://$BindAddr in your browser."
+Write-Host "For LAN sharing in PowerShell: `$env:FUDOKI_BIND_ADDR=`"0.0.0.0:8000`"; .\run.ps1"
+Write-Host "For LAN sharing in Command Prompt: set FUDOKI_BIND_ADDR=0.0.0.0:8000 && run.bat"
+Write-Host "Then open http://<this-computer-lan-ip>:8000 from another machine."
 Write-Host ""
 cargo run

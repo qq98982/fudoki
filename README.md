@@ -58,6 +58,16 @@ Launcher behavior:
 - starts the server with `cargo run`
 - then open http://127.0.0.1:8000
 
+LAN sharing:
+- Fudoki listens on `127.0.0.1:8000` by default, so only the current machine can connect.
+- To allow other machines on the same local network, start it with `FUDOKI_BIND_ADDR=0.0.0.0:8000`.
+- You can also persist that setting by adding `FUDOKI_BIND_ADDR=0.0.0.0:8000` to your local `.env`.
+- Linux/macOS: `FUDOKI_BIND_ADDR=0.0.0.0:8000 ./run.sh`
+- Windows PowerShell: `$env:FUDOKI_BIND_ADDR="0.0.0.0:8000"; .\run.ps1`
+- Windows Command Prompt: `set FUDOKI_BIND_ADDR=0.0.0.0:8000 && run.bat`
+- Then open `http://<this-computer-lan-ip>:8000` from another machine.
+- On Windows, allow inbound access to port 8000 if Windows Firewall prompts or blocks it.
+
 ### Online TTS (OpenAI-compatible)
 By default, Fudoki can use the browser's built-in Web Speech API ("system" TTS). To enable remote/online TTS, configure a local `.env` file (see `.env.example`) and pick the `openai-compatible` provider in Settings.
 
@@ -168,6 +178,16 @@ run.bat
 - `cargo run` でサーバーを起動
 - ブラウザで http://127.0.0.1:8000 を開く
 
+LAN 共有:
+- Fudoki はデフォルトで `127.0.0.1:8000` を待ち受けるため、現在のマシンからのみ接続できます。
+- 同じローカルネットワーク上の別マシンから接続する場合は、`FUDOKI_BIND_ADDR=0.0.0.0:8000` を指定して起動します。
+- ローカルの `.env` に `FUDOKI_BIND_ADDR=0.0.0.0:8000` を追加して永続化することもできます。
+- Linux/macOS: `FUDOKI_BIND_ADDR=0.0.0.0:8000 ./run.sh`
+- Windows PowerShell: `$env:FUDOKI_BIND_ADDR="0.0.0.0:8000"; .\run.ps1`
+- Windows コマンドプロンプト: `set FUDOKI_BIND_ADDR=0.0.0.0:8000 && run.bat`
+- 別マシンのブラウザで `http://<このマシンのLAN内IP>:8000` を開きます。
+- Windows でファイアウォールの確認が出る、または遮断される場合は、8000 番ポートの受信を許可してください。
+
 ### 品詞色分け
 | 色 | 品詞 |
 |---|---|
@@ -251,6 +271,16 @@ run.bat
 - 执行 `cargo build`
 - 使用 `cargo run` 启动服务
 - 浏览器访问 http://127.0.0.1:8000
+
+局域网共享：
+- Fudoki 默认监听 `127.0.0.1:8000`，只有当前机器能访问。
+- 如果要让同一局域网内的其他机器访问，启动时设置 `FUDOKI_BIND_ADDR=0.0.0.0:8000`。
+- 也可以把 `FUDOKI_BIND_ADDR=0.0.0.0:8000` 写进本机 `.env`，以后启动会自动使用。
+- Linux/macOS：`FUDOKI_BIND_ADDR=0.0.0.0:8000 ./run.sh`
+- Windows PowerShell：`$env:FUDOKI_BIND_ADDR="0.0.0.0:8000"; .\run.ps1`
+- Windows 命令提示符：`set FUDOKI_BIND_ADDR=0.0.0.0:8000 && run.bat`
+- 然后在其他机器浏览器打开 `http://<这台机器的局域网IP>:8000`。
+- 如果 Windows 防火墙提示或拦截，需要允许 8000 端口入站访问。
 
 ### 词性颜色
 | 颜色 | 词性 |
